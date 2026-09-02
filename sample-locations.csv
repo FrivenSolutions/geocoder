@@ -1,0 +1,27 @@
+Site,City,State,Country,Annual Volume
+Andover plant,Andover,MA,USA,14200
+Moorestown depot,Moorestown,NJ,USA,8800
+Hanscom air terminal,Hanscom AFB,MA,USA,3100
+Bragg receiving,Fort Bragg,NC,USA,22400
+Lejeune receiving,Camp Lejeune,NC,USA,17650
+Rotterdam port,Rotterdam,,NLD,98300
+Antwerp port,Antwerp,,BEL,74100
+Busan port,Busan,,KOR,61200
+Seoul office,Seoul,,"Korea, Republic of",4300
+Yokota air hub,Yokota Air Base,,JPN,9700
+Ramstein air hub,Ramstein Air Base,,DEU,11250
+London depot,London,ON,CAN,5400
+London office,London,,GBR,26900
+Paris office,Paris,,FRA,19800
+Paris depot,Paris,TX,USA,2700
+Zurich office,Zürich,,CHE,12300
+Tel Aviv office,Tel Aviv-Yafo,,ISR,7600
+Washington office,"Washington, D.C.",DC,USA,15900
+St Louis hub,St. Louis,MO,USA,31000
+Springfield depot,Springfield,IL,USA,6200
+Underspecified,Springfield,,USA,900
+Bad country,Somewhere,,Freedonia,100
+Country total,,,AUS,44000
+Blakeley site,Blakeley,AL,USA,300
+Bay View parcel,Bay View Estates,AL,USA,150
+Mustang strip,Mustang Field,TX,USA,80

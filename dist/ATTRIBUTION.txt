@@ -1,0 +1,2 @@
+Place data from GeoNames (https://www.geonames.org/), licensed CC BY 4.0.
+Country outlines from Natural Earth via world-atlas, public domain.

@@ -1,0 +1,17 @@
+{
+  "name": "geocoder",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Offline city/state/country to latitude/longitude geocoder. Single HTML file, no server, no API.",
+  "scripts": {
+    "data": "node scripts/build-gazetteer.mjs",
+    "app": "node scripts/build-app.mjs",
+    "build": "node scripts/build-app.mjs"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "d3-geo": "^3.1.1",
+    "topojson-client": "^3.1.0"
+  }
+}

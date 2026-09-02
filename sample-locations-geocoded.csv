@@ -1,0 +1,27 @@
+﻿Site,City,State,Country,Annual Volume,Latitude,Longitude,Matched Place,Match Type,Status
+Andover plant,Andover,MA,USA,14200,42.6584,-71.1370,"Andover, Essex County, Massachusetts, US",populated place (PPL),OK
+Moorestown depot,Moorestown,NJ,USA,8800,39.9671,-74.9427,"Moorestown, Burlington County, New Jersey, US",populated place (PPL),OK
+Hanscom air terminal,Hanscom AFB,MA,USA,3100,42.4581,-71.2760,"Hanscom Air Force Base, Middlesex County, Massachusetts, US",military installation (INSM),OK
+Bragg receiving,Fort Bragg,NC,USA,22400,35.1390,-79.0060,"Fort Bragg, Cumberland County, North Carolina, US",populated place (PPL),OK
+Lejeune receiving,Camp Lejeune,NC,USA,17650,34.5877,-77.3926,"Marine Corps Base Camp Lejeune, Onslow County, North Carolina, US",military installation (INSM),OK
+Rotterdam port,Rotterdam,,NLD,98300,51.9225,4.4792,"Rotterdam, Rotterdam, South Holland, NL",populated place (PPL),OK
+Antwerp port,Antwerp,,BEL,74100,51.2205,4.4003,"Antwerp, Provincie Antwerpen, Flanders, BE",populated place (PPL),OK
+Busan port,Busan,,KOR,61200,35.1017,129.0300,"Busan, Busan, KR",first-order administrative seat (PPLA),Chosen as far larger than the alternatives
+Seoul office,Seoul,,"Korea, Republic of",4300,37.5660,126.9784,"Seoul, Seoul, KR",national capital (PPLC),OK
+Yokota air hub,Yokota Air Base,,JPN,9700,35.7485,139.3485,"Yokota Air Base, Nishitama-gun, Tokyo, JP",air base (AIRB),OK
+Ramstein air hub,Ramstein Air Base,,DEU,11250,49.4333,7.6000,"Ramstein, Rheinland-Pfalz, DE",air base (AIRB),OK
+London depot,London,ON,CAN,5400,42.9834,-81.2330,"London, Middlesex County, Ontario, CA",populated place (PPL),OK
+London office,London,,GBR,26900,51.5085,-0.1257,"London, Greater London, England, GB",national capital (PPLC),OK
+Paris office,Paris,,FRA,19800,48.8534,2.3488,"Paris, Paris, Île-de-France, FR",national capital (PPLC),OK
+Paris depot,Paris,TX,USA,2700,33.6609,-95.5555,"Paris, Lamar County, Texas, US",second-order administrative seat (PPLA2),OK
+Zurich office,Zürich,,CHE,12300,47.3667,8.5500,"Zürich, Bezirk Zürich, Zurich, CH",first-order administrative seat (PPLA),OK
+Tel Aviv office,Tel Aviv-Yafo,,ISR,7600,32.0809,34.7806,"Tel Aviv, Tel Aviv, IL",first-order administrative seat (PPLA),OK
+Washington office,"Washington, D.C.",DC,USA,15900,38.8951,-77.0364,"Washington, District of Columbia, US",national capital (PPLC),OK
+St Louis hub,St. Louis,MO,USA,31000,38.6273,-90.1979,"St. Louis, City of Saint Louis, Missouri, US",second-order administrative seat (PPLA2),OK
+Springfield depot,Springfield,IL,USA,6200,39.8017,-89.6437,"Springfield, Sangamon County, Illinois, US",first-order administrative seat (PPLA),OK
+Underspecified,Springfield,,USA,900,,,,,"Ambiguous: ""Springfield, USA"" matches 68 populated places in US - add a county to choose: Lane County (pop 60,870); Tuolumne County; Bingham County; Baca County (pop 1,396)"
+Bad country,Somewhere,,Freedonia,100,,,,,"Unknown country ""Freedonia"" - use an ISO 3166-1 alpha-3 code such as USA or NLD"
+Country total,,,AUS,44000,-25.6322,134.2070,Australia,country centre,Approximate
+Blakeley site,Blakeley,AL,USA,300,30.7421,-87.9242,"Blakeley, Baldwin County, Alabama, US",historical populated place (PPLH),"Check: abandoned, destroyed or historical - no longer a standing place"
+Bay View parcel,Bay View Estates,AL,USA,150,34.2265,-85.7055,"Bay View Estates, Cherokee County, Alabama, US",section of a populated place (PPLX),"Check: a section or locality within a larger place, not a town in its own right"
+Mustang strip,Mustang Field,TX,USA,80,32.5035,-96.9003,"Mustang Field (historical), Grayson County, Texas, US",abandoned airfield (AIRQ),"Check: abandoned, destroyed or historical - no longer a standing place"

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Geocoder</title>
+<style>/*STYLE*/</style>
+</head>
+<body>
+
+<header>
+  <h1>Geocoder</h1>
+  <p>Turn a list of cities, states and countries into latitude and longitude. Runs entirely in
+     this browser &mdash; no upload, no API, no internet connection.</p>
+  <p id="data-status" class="status">Loading place data&hellip;</p>
+</header>
+
+<section id="step-file" hidden>
+  <h2>1. Choose your file</h2>
+  <div id="drop">
+    <strong>Drop a CSV here</strong>
+    <span>or click to browse. Comma, tab, semicolon and pipe separated files all work.</span>
+  </div>
+  <input type="file" id="file" accept=".csv,.tsv,.txt,text/csv,text/plain" hidden>
+  <p id="file-status" class="status"></p>
+</section>
+
+<section id="step-map" hidden>
+  <h2>2. Confirm the columns</h2>
+  <label class="check"><input type="checkbox" id="has-header" checked> First row is a header</label>
+  <div id="mapping"></div>
+  <h3>How your first rows will be read</h3>
+  <table id="preview"></table>
+</section>
+
+<section id="step-run" hidden>
+  <h2>3. Geocode</h2>
+  <label class="field">
+    <span class="field-name">Country to assume when a row has none</span>
+    <select id="default-country"><option value="">- none, and such rows will fail -</option></select>
+    <span class="field-hint">Only used where the row itself names no country.</span>
+  </label>
+  <label class="check">
+    <input type="checkbox" id="approximate">
+    Fall back to the centre of the state for places that are not in the gazetteer
+  </label>
+  <p class="field-hint">Off by default. A point at the middle of Pennsylvania looks exactly as
+     precise as a real one, and nothing in a spreadsheet says otherwise. When it is on, those
+     rows are marked <em>Approximate</em> in the Status column.</p>
+  <label class="check">
+    <input type="checkbox" id="dominant">
+    Where one candidate is vastly larger than the rest, take it
+  </label>
+  <p class="field-hint">Off by default. This is not &ldquo;pick the biggest&rdquo;: a candidate
+     qualifies only at 50,000 people <em>and</em> twenty times the next one. That resolves
+     <code>Busan, KOR</code>, which matches a city of 3.3 million and a hamlet in Jangseong-gun,
+     while leaving <code>Springfield, USA</code> ambiguous &mdash; Missouri, Massachusetts and
+     Illinois are 167,882, 153,606 and 116,565, and there is no honest way to choose. Rows
+     decided this way say so in the Status column.</p>
+  <button id="run">Geocode</button>
+  <p id="progress" class="status"></p>
+
+  <div id="result" hidden>
+    <p id="summary" class="status"></p>
+    <p id="flagged" class="status"></p>
+    <button id="download">Download the geocoded CSV</button>
+    <div id="failures"></div>
+  </div>
+</section>
+
+<footer>
+  <p>Five columns are added to your file: <code>Latitude</code>, <code>Longitude</code>,
+     <code>Matched Place</code>, <code>Match Type</code> and <code>Status</code>. A row that
+     could not be placed comes back with empty coordinates and the reason in
+     <code>Status</code> &mdash; never with a guess.</p>
+  <p>Place data from <a href="https://www.geonames.org/">GeoNames</a>, CC&nbsp;BY&nbsp;4.0.
+     Country outlines from Natural Earth, public domain.</p>
+</footer>
+
+<script>/*APP*/</script>
+</body>
+</html>
