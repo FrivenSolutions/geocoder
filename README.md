@@ -15,8 +15,31 @@ bases, airports, ports and rail terminals.
 
 ## Using it
 
-Open `dist/geocoder.html` — double-click it, no server needed. Drop in a CSV, confirm the
+The app is in the repository; the place data is not. Two steps:
+
+1. Download `geocoder-data.zip` from the [latest release][releases] (72 MB).
+2. Unzip it into `dist/`, so that `dist/data/` sits next to `dist/geocoder.html`.
+
+```
+dist/
+  geocoder.html
+  data/
+    index.js
+    US.js
+    ...
+```
+
+Then open `dist/geocoder.html` — double-click it, no server needed. Drop in a CSV, confirm the
 columns it detected, click Geocode, download the result.
+
+[releases]: https://github.com/FrivenSolutions/geocoder/releases/latest
+
+The data is a release asset rather than a committed file because Git keeps every version of
+everything forever. At 244 MB unpacked, each rebuild would add another 244 MB to the
+repository's history permanently — deleted or not — and two refreshes would put a clone near a
+gigabyte. Git LFS has the same problem in a different shape: GitHub's free tier allows 1 GB of
+LFS storage and 1 GB of monthly bandwidth, so this data would allow four versions and about
+four clones a month. A release asset has neither limit and can be replaced in place.
 
 Five columns are appended to your original file:
 
@@ -159,8 +182,16 @@ node test/run-tests.mjs
 
 The data step needs `allCountries.txt`, `admin1CodesASCII.txt`, `admin2Codes.txt` and
 `countryInfo.txt` from [download.geonames.org](https://download.geonames.org/export/dump/).
-It writes `dist/data/` — 244 MB across 248 shards, of which the US is 11.4 MB and most
-countries are under 1 MB.
+It writes `dist/data/` — 244 MB across 248 shards, of which the US is 11.5 MB and most
+countries are under 1 MB. You only need this to refresh the data; to *use* the tool, take the
+release asset instead.
+
+To publish a refreshed gazetteer, zip the folder and attach it to a new release — the zip must
+contain the `data/` directory itself, not its contents, so it unpacks correctly:
+
+```bash
+cd dist && tar --format=zip -cf ../geocoder-data.zip data
+```
 
 `dist/geocoder.html` is a single self-contained file. There is no bundler: `build-app.mjs`
 strips the `import`/`export` lines and concatenates the modules in dependency order. That is

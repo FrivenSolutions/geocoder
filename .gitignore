@@ -1,5 +1,8 @@
 node_modules/
-dist/data/
-dist/geocoder.html
 .tmp/
 *.zip
+
+# The gazetteer. 244 MB of generated data, published as a release asset rather than
+# committed: git keeps every version forever, so each rebuild would add another 244 MB to
+# history permanently. See the README for where to get it.
+dist/data/
