@@ -260,7 +260,7 @@ async function run() {
     const body = state.rows.slice(state.hasHeader ? 1 : 0);
     const options = {
         defaultCountry: el("default-country").value,
-        approximateToSubdivision: el("approximate").checked,
+        fallback: el("fallback").value,
         acceptDominant: el("dominant").checked,
     };
 

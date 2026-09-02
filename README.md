@@ -153,9 +153,22 @@ first and only a miss falls through to the area.
 
 ### Two settings, both off by default
 
-**Fall back to the centre of the state** for a city not in the gazetteer. Off because a point
-in the middle of Pennsylvania looks exactly as precise as a real one, and nothing in a
-spreadsheet says otherwise. Such rows are marked `Approximate`.
+**What to do when a place is not in the gazetteer** — three levels, blank by default:
+
+| Level | `Nowheresville, TX, USA` | `Nowheresville, , FRA` |
+|---|---|---|
+| Leave blank | blank, with a reason | blank, with a reason |
+| State centre | centre of Texas | blank — no state to fall back to |
+| State, then country | centre of Texas | centre of France |
+
+Blank by default because a point in the middle of Pennsylvania looks exactly as precise as a
+real one, and nothing in a spreadsheet says otherwise. The country level is coarser still and
+earns its place only when a rough point everywhere beats an exact one in fewer places. Either
+way the row is marked `Approximate` and its `Matched Place` says where it actually went.
+
+This applies **only to places that could not be found**. A row naming no city at all already
+resolves to its state or country centre regardless of the setting, because there is nothing
+else it could mean.
 
 **Take a candidate that is vastly larger than the rest.** Not "pick the biggest" — a candidate
 qualifies only at 50,000 people *and* twenty times the next one. The thresholds exist to

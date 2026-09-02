@@ -415,10 +415,20 @@ export function locate(input, options) {
     }
 
     if (!candidates) {
-        // Only with the setting on, and only when the subdivision is known: without one there
-        // is nothing to approximate to, and falling back to the whole country would move the
-        // point hundreds of miles while still looking exact.
-        if (opts.approximateToSubdivision && subdivision !== null) {
+        /**
+         * How far to climb when the place itself cannot be found.
+         *
+         * "state" stops at the subdivision, which is where the Flow Map stopped: without a
+         * subdivision there is nothing close by to approximate to, and falling back to the
+         * whole country moves the point hundreds of miles while still looking exact.
+         *
+         * "country" accepts that trade knowingly. It is worth having for a dataset where a
+         * coarse point everywhere beats a sparse one - a country-level map, or a first pass to
+         * see the shape of the data - and every row it produces is marked Approximate and says
+         * in its own text where it was actually placed.
+         */
+        const level = opts.fallback || (opts.approximateToSubdivision ? "state" : "none");
+        if (level !== "none" && subdivision !== null) {
             const point = idx.a1p[subdivision];
             if (point) {
                 return {
@@ -427,6 +437,20 @@ export function locate(input, options) {
                     place: cityText + " - shown at the centre of " + idx.a1n[subdivision] + ", " + countryName(country),
                     kind: "subdivision centre",
                     approximate: true,
+                    adjusted: adjusted,
+                };
+            }
+        }
+        if (level === "country") {
+            const anchor = idx.cp[countryCode];
+            if (anchor) {
+                return {
+                    lat: anchor[1] / scale,
+                    lon: anchor[0] / scale,
+                    place: cityText + " - shown at the centre of " + countryName(country),
+                    kind: "country centre",
+                    approximate: true,
+                    adjusted: adjusted,
                 };
             }
         }

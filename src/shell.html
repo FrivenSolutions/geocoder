@@ -40,13 +40,22 @@
     <select id="default-country"><option value="">- none, and such rows will fail -</option></select>
     <span class="field-hint">Only used where the row itself names no country.</span>
   </label>
-  <label class="check">
-    <input type="checkbox" id="approximate">
-    Fall back to the centre of the state for places that are not in the gazetteer
+  <label class="field">
+    <span class="field-name">When a place is not in the gazetteer</span>
+    <select id="fallback">
+      <option value="none">Leave the row blank and say why</option>
+      <option value="state">Use the centre of its state</option>
+      <option value="country">Use the centre of its state, or of its country if it has no state</option>
+    </select>
+    <span class="field-hint">Blank by default. A point at the middle of Pennsylvania looks
+       exactly as precise as a real one, and nothing in a spreadsheet says otherwise &mdash; the
+       country option is coarser still, and worth it only when a rough point everywhere beats an
+       exact one in fewer places. Either way those rows are marked <em>Approximate</em> and say
+       where they were actually put.</span>
   </label>
-  <p class="field-hint">Off by default. A point at the middle of Pennsylvania looks exactly as
-     precise as a real one, and nothing in a spreadsheet says otherwise. When it is on, those
-     rows are marked <em>Approximate</em> in the Status column.</p>
+  <p class="field-hint">This applies only to places that could not be found. A row that names
+     <em>no</em> city already resolves to its state or country centre regardless of this
+     setting, because there is nothing else it could mean.</p>
   <label class="check">
     <input type="checkbox" id="dominant">
     Where one candidate is vastly larger than the rest, take it

@@ -207,9 +207,18 @@ check("Busan, setting on", "Busan||KOR", [35.1028, 129.0403], { acceptDominant: 
 check("Springfield, setting on", { city: "Springfield", state: "", county: "", country: "USA" }, "ambiguous", { acceptDominant: true });
 check("Paris needs no setting", "Paris||FRA", [48.8534, 2.3488]);
 
-console.log("\nApproximate fallback, off by default");
-check("missing place, setting off", "Notaplaceatall|MA|USA", "no place of that name");
-check("missing place, setting on", "Notaplaceatall|MA|USA", [42.2, -71.7, 1.5], { approximateToSubdivision: true });
+console.log("\nApproximate fallback, blank by default");
+check("missing place, blank", "Notaplaceatall|MA|USA", "no place of that name");
+check("missing place, to the state", "Notaplaceatall|MA|USA", [42.2, -71.7, 1.5], { fallback: "state" });
+// The state level deliberately cannot help a row with no state - that is what the country
+// level is for, and why it is a separate choice rather than the same one.
+check("no state, state level cannot help", "Notaplaceatall||FRA", "no place of that name", { fallback: "state" });
+check("no state, country level can", "Notaplaceatall||FRA", [46.6, 2.4, 3], { fallback: "country" });
+check("country level still prefers the state", "Notaplaceatall|MA|USA", [42.2, -71.7, 1.5], { fallback: "country" });
+// A row naming no city at all resolves regardless of the setting: there is nothing else it
+// could mean, so it is not a fallback.
+check("no city named, no setting", "||AUS", [-25.0, 134.0, 6]);
+check("old option name still honoured", "Notaplaceatall|MA|USA", [42.2, -71.7, 1.5], { approximateToSubdivision: true });
 
 console.log("\n  " + pass + " passed, " + fail + " failed\n");
 process.exit(fail ? 1 : 0);
