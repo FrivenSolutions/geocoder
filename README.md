@@ -131,6 +131,26 @@ There are exactly two places a choice is made for you, both deliberate and both 
 
 Rows naming no city resolve to a state or country anchor, flagged `Approximate`.
 
+### Two things it will fix for you, and say so
+
+**A number stuck on the front of the name.** Real exports carry routing and branch codes glued
+to the town: `0409 Singapore`, `01 Dakar`, `0114 Oslo`. The number is dropped and the lookup
+retried — but only *after* the name as written has already missed, and the row is flagged.
+
+The obvious version of this rule, strip every digit from every name, is wrong and measurably
+so. 7,005 populated places have a digit in their name. Dropping digits merges `Al Majaz 1` with
+`Al Majaz 3`, two real and distinct places in Sharjah, and collapses the UAE's `U01`, `U26` and
+`U52` all onto `u`. Doing it as a retry means nothing that already resolves can change, and a
+place genuinely called `4th Mikrorayon` still matches on its own name.
+
+**A county or region in the city column.** Exports map a region column onto the city field
+constantly, and UK data is the worst offender: `Buckinghamshire` is a county, GeoNames feature
+class `A`, and no populated place carries the name. If a city name matches no place but does
+match a subdivision or county in that country, the area's anchor is returned, flagged
+`Approximate` — the same treatment a state-only row already gets. Real towns are unaffected:
+`Bedford`, `Belfast` and `Antrim` still resolve to the towns, because the place lookup runs
+first and only a miss falls through to the area.
+
 ### Two settings, both off by default
 
 **Fall back to the centre of the state** for a city not in the gazetteer. Off because a point

@@ -324,6 +324,9 @@ async function run() {
             if (result.dominant) {
                 notes.push("Chosen as far larger than the alternatives");
             }
+            if (result.adjusted) {
+                notes.push("Check: " + result.adjusted);
+            }
             if (result.caveat) {
                 notes.push("Check: " + result.caveat);
             }
@@ -337,7 +340,7 @@ async function run() {
                     dominant++;
                 }
             }
-            if (result.caveat) {
+            if (result.caveat || result.adjusted) {
                 flagged++;
             }
         } else {
@@ -363,9 +366,9 @@ async function run() {
     // question they raise is whether the gazetteer should be carrying such places at all.
     el("flagged").textContent = flagged
         ? flagged.toLocaleString() + " row" + (flagged === 1 ? "" : "s")
-            + " matched a former or minor place - a ghost town, a destroyed or historical site, or a "
-            + "named section of a larger place. Each says so in the Status column, prefixed \"Check:\". "
-            + "Filter on that to judge whether these entries earn their place in the data."
+            + " matched something worth checking - a former or minor place, or a name this tool had "
+            + "to adjust to find, such as one with a number stuck on the front. Each says so in the "
+            + "Status column, prefixed \"Check:\". Filter on that to review them."
         : "";
     el("flagged").className = flagged ? "status warn" : "status";
 

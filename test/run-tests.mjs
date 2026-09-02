@@ -74,6 +74,27 @@ function check(label, input, expect, options) {
     }
 }
 
+/** Asserts two inputs do NOT collapse onto the same place. */
+function checkDistinct(label, a, b) {
+    const one = [a, b].map((q) => {
+        const f = splitCombined(q);
+        const c = resolveCountry(f.country);
+        if (c !== null) {
+            need(getIndex().ccc[c]);
+        }
+        return locate(f, {});
+    });
+    const both = one.every((r) => r.lat !== undefined);
+    const apart = both && (one[0].lat !== one[1].lat || one[0].lon !== one[1].lon);
+    if (apart) {
+        pass++;
+        console.log("  ok    " + label.padEnd(42) + one.map((r) => r.lat + "," + r.lon).join("  vs  "));
+    } else {
+        fail++;
+        console.log("  FAIL  " + label.padEnd(42) + (both ? "same point - they were merged" : "one did not resolve"));
+    }
+}
+
 /** Asserts what a matched row says about itself, rather than where it landed. */
 function checkFlag(label, input, expectCaveat) {
     const fields = typeof input === "string" ? splitCombined(input) : input;
@@ -148,6 +169,24 @@ console.log("\nRows that name no city");
 check("country only", "||AUS", [-25.0, 134.0, 6]);
 check("state only", "|Texas|USA", [31.0, -99.0, 4]);
 check("state only, unknown state", "|Freedonia|USA", "not a subdivision");
+
+console.log("\nA number stuck on the front of the name");
+// Dropped only on a retry, after the name as written has already missed.
+check("0409 Singapore", "0409 Singapore||SGP", [1.2897, 103.8501, 0.6]);
+check("01 Dakar", "01 Dakar||SEN", [14.6937, -17.4441, 0.6]);
+check("0114 Oslo", "0114 Oslo||NOR", [59.9127, 10.7461, 0.6]);
+check("no number, unaffected", "Oslo||NOR", [59.9127, 10.7461, 0.6]);
+// The reason it is a retry and not a fold rule: these must stay distinct.
+check("Al Majaz 1 keeps its digit", { city: "Al Majaz 1", state: "", county: "", country: "ARE" }, [25.33, 55.38, 0.5]);
+check("Al Majaz 3 is a different place", { city: "Al Majaz 3", state: "", county: "", country: "ARE" }, [25.33, 55.38, 0.5]);
+checkDistinct("Al Majaz 1 and 3 are not the same point", "Al Majaz 1||ARE", "Al Majaz 3||ARE");
+
+console.log("\nA county or region in the city column");
+// UK exports do this constantly. Answered with the area anchor, flagged approximate.
+check("Buckinghamshire, a county", "Buckinghamshire||GBR", [51.8, -0.8, 1.2]);
+check("Antrim still finds the town", "Antrim||GBR", [54.7195, -6.2072, 0.3]);
+check("Belfast still finds the city", "Belfast||GBR", [54.5964, -5.9301, 0.3]);
+check("Bedford still finds the town", "Bedford||GBR", [52.1350, -0.4667, 0.3]);
 
 console.log("\nFormer and minor places are matched, but flagged");
 // Carried so a historical address still resolves, ranked last so they never win a tie, and

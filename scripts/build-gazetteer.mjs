@@ -333,8 +333,9 @@ const intern = (list, index, value) => {
     return at;
 };
 
-/** Running mean position of each subdivision, for the approximate-to-subdivision fallback. */
+/** Running mean position of each subdivision and county, for the area fallbacks. */
 const a1Sum = [];
+const a2Sum = [];
 
 const shards = {};
 const files = readdirSync(work).filter((f) => f.endsWith(".tsv")).sort();
@@ -369,19 +370,31 @@ for (const file of files) {
         lat.push(latInt);
         const at1 = a1Key ? intern(a1Codes, a1Index, a1Key) : -1;
         a1Ref.push(at1);
-        a2Ref.push(a2Key && a2Name.has(a2Key) ? intern(a2Codes, a2Index, a2Key) : -1);
+        const at2 = a2Key && a2Name.has(a2Key) ? intern(a2Codes, a2Index, a2Key) : -1;
+        a2Ref.push(at2);
         fcRef.push(intern(fcCodes, fcIndex, fcode));
         pop.push(Number(r[8]) || 0);
         names.push(name.replace(/[\r\n\t]+/g, " "));
 
-        if (at1 >= 0 && !MINOR.has(fcode)) {
-            let sum = a1Sum[at1];
-            if (!sum) {
-                sum = a1Sum[at1] = [0, 0, 0];
+        if (!MINOR.has(fcode)) {
+            if (at1 >= 0) {
+                let sum = a1Sum[at1];
+                if (!sum) {
+                    sum = a1Sum[at1] = [0, 0, 0];
+                }
+                sum[0] += lonInt;
+                sum[1] += latInt;
+                sum[2]++;
             }
-            sum[0] += lonInt;
-            sum[1] += latInt;
-            sum[2]++;
+            if (at2 >= 0) {
+                let sum = a2Sum[at2];
+                if (!sum) {
+                    sum = a2Sum[at2] = [0, 0, 0];
+                }
+                sum[0] += lonInt;
+                sum[1] += latInt;
+                sum[2]++;
+            }
         }
 
         // Every distinct folded form of this place points at this row.
@@ -545,6 +558,21 @@ const index = {
     a1p: a1Point,
     a1a: a1Alias,
     a2n: a2Codes.map((code) => a2Name.get(code) || ""),
+    /**
+     * Counties, so a row whose city column actually holds an administrative area still lands
+     * somewhere. UK data does this constantly - "Buckinghamshire" is a county, feature class
+     * A, and no populated place carries the name - and the same is true of any export where a
+     * region column has been mapped to the city field by mistake.
+     *
+     * The country prefix is stored as two characters rather than the whole "GB.ENG.Q4" code:
+     * it is all the resolver needs to keep an English county apart from a namesake elsewhere,
+     * and the index is loaded on every run whether it is used or not.
+     */
+    a2cc: a2Codes.map((code) => code.slice(0, 2)),
+    a2p: a2Codes.map((_, i) => {
+        const sum = a2Sum[i];
+        return sum && sum[2] > 0 ? [Math.round(sum[0] / sum[2]), Math.round(sum[1] / sum[2])] : null;
+    }),
     fcc: fcCodes,
     shards,
 };

@@ -173,6 +173,35 @@ function resolveSubdivision(token, countryCode) {
 }
 
 /**
+ * County lookup by name, built once on first use.
+ *
+ * Scanning 39,720 counties per row would be visible on a large file, and most files never
+ * need this path at all, so the map is built lazily and keyed by country to keep Bedford the
+ * English borough apart from Bedford County, Virginia.
+ */
+let countyByName = null;
+
+function resolveCounty(token, countryCode, idx) {
+    if (!countyByName) {
+        countyByName = new Map();
+        for (let i = 0; i < idx.a2n.length; i++) {
+            if (!idx.a2n[i] || !idx.a2p[i]) {
+                continue;
+            }
+            const key = idx.a2cc[i] + "|" + foldAdmin(idx.a2n[i]);
+            // First wins: a duplicate name inside one country cannot be told apart here, and
+            // the anchors of two counties sharing a name are not far enough apart to matter at
+            // the precision an area centre claims.
+            if (!countyByName.has(key)) {
+                countyByName.set(key, i);
+            }
+        }
+    }
+    const at = countyByName.get(countryCode + "|" + foldAdmin(token));
+    return at === undefined ? -1 : at;
+}
+
+/**
  * The location as the author wrote it, made readable.
  *
  * Messages naming only the city left the reader unable to tell what was actually looked up -
@@ -290,6 +319,20 @@ export function locate(input, options) {
     const countyKey = foldAdmin(input.county);
     const cityText = String(input.city == null ? "" : input.city).trim();
     const cityKey = fold(cityText);
+    /**
+     * A leading number, as in "0409 Singapore", "01 Dakar", "0114 Oslo".
+     *
+     * Real exports carry routing, branch and postal codes glued to the front of the town name.
+     * The obvious fix - strip every digit from every name - is wrong, and measurably so: 7,005
+     * populated places have a digit in their name, and dropping digits merges "Al Majaz 1" with
+     * "Al Majaz 3" and collapses the UAE's "U01", "U26" and "U52" all onto "u".
+     *
+     * So the number is only dropped on a RETRY, after the name as written has already failed to
+     * match. Nothing that resolves today changes, a place genuinely called "4th Mikrorayon"
+     * still matches on its own name, and the retry is reported so the row can be checked.
+     */
+    const NUMERIC_PREFIX = /^\s*\d+\s*[-_.,:/]?\s+/;
+    const strippedText = NUMERIC_PREFIX.test(cityText) ? cityText.replace(NUMERIC_PREFIX, "").trim() : "";
 
     /**
      * A row naming no city is still a legitimate location - country-level and state-level
@@ -324,7 +367,53 @@ export function locate(input, options) {
         };
     }
 
-    const candidates = shard.byName.get(cityKey);
+    let candidates = shard.byName.get(cityKey);
+    let adjusted = "";
+    if (!candidates && strippedText) {
+        const retry = shard.byName.get(fold(strippedText));
+        if (retry) {
+            candidates = retry;
+            adjusted = 'ignored the leading number in "' + cityText + '"';
+        }
+    }
+
+    /**
+     * The name is not a place but an administrative area - a county or a province.
+     *
+     * Exports map a region column onto the city field constantly, and UK data is the worst
+     * offender: "Buckinghamshire" is a county, GeoNames feature class A, and no populated
+     * place carries the name, so there is nothing for the ordinary lookup to find. The area
+     * anchor is the honest answer - it is where the place is, to within the size of the county
+     * - and it is returned flagged as approximate, exactly as a state-only row already is.
+     */
+    if (!candidates) {
+        const areaText = strippedText || cityText;
+        const asSubdivision = resolveSubdivision(areaText, countryCode);
+        if (asSubdivision !== null && idx.a1p[asSubdivision]) {
+            const point = idx.a1p[asSubdivision];
+            return {
+                lat: point[1] / scale,
+                lon: point[0] / scale,
+                place: idx.a1n[asSubdivision] + ", " + countryName(country),
+                kind: "subdivision centre",
+                approximate: true,
+                adjusted: adjusted,
+            };
+        }
+        const asCounty = resolveCounty(areaText, countryCode, idx);
+        if (asCounty >= 0) {
+            const point = idx.a2p[asCounty];
+            return {
+                lat: point[1] / scale,
+                lon: point[0] / scale,
+                place: idx.a2n[asCounty] + ", " + countryName(country),
+                kind: "county centre",
+                approximate: true,
+                adjusted: adjusted,
+            };
+        }
+    }
+
     if (!candidates) {
         // Only with the setting on, and only when the subdivision is known: without one there
         // is nothing to approximate to, and falling back to the whole country would move the
@@ -439,6 +528,7 @@ export function locate(input, options) {
         code: code,
         caveat: caveatOf(code),
         dominant: dominant,
+        adjusted: adjusted,
     };
 }
 
