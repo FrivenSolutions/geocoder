@@ -244,9 +244,81 @@ function renderPreview() {
 // ---------------------------------------------------------------------------
 // Run.
 // ---------------------------------------------------------------------------
-el("run").addEventListener("click", run);
+/**
+ * Runs the geocode and makes sure a failure is visible.
+ *
+ * Without this an exception anywhere inside the run rejected a promise nobody was holding:
+ * no message, the progress counter frozen wherever it had got to, the button left disabled,
+ * and a page that otherwise looked perfectly healthy. Indistinguishable, from the outside,
+ * from the background-tab throttling that pause() now avoids - and a user who hits either
+ * deserves to be told which.
+ */
+el("run").addEventListener("click", async () => {
+    try {
+        await run();
+    } catch (err) {
+        console.error(err);
+        el("progress").textContent = "Stopped: " + (err && err.message ? err.message : String(err))
+            + ". Nothing further was written. The browser console has the details.";
+        el("progress").className = "status bad";
+        el("run").disabled = false;
+    }
+});
 
-const pause = () => new Promise((resolve) => setTimeout(resolve, 0));
+/**
+ * Hands control back to the browser without using a timer.
+ *
+ * setTimeout is throttled to roughly once per MINUTE in a background tab. A loop that yields
+ * with it every few thousand rows therefore does a few thousand rows per minute the moment
+ * the tab loses focus - a four million row file would take a day - and the symptom is not an
+ * error but a page that stays perfectly responsive while the counter stops moving. That is
+ * exactly what a user reported on a three million row file.
+ *
+ * A MessageChannel message is not a timer and is not subject to that throttling, so the run
+ * continues at full speed in a background tab. Only one yield is ever outstanding, because
+ * the loop awaits each before continuing.
+ */
+const pause = (() => {
+    if (typeof MessageChannel !== "function") {
+        return () => new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    const channel = new MessageChannel();
+    let pending = null;
+    channel.port1.onmessage = () => {
+        const resolve = pending;
+        pending = null;
+        if (resolve) {
+            resolve();
+        }
+    };
+    return () => new Promise((resolve) => {
+        pending = resolve;
+        channel.port2.postMessage(0);
+    });
+})();
+
+/**
+ * Yields on a clock rather than on a row count.
+ *
+ * Every 2,000 rows was both too often on a fast file and too rare on a slow one. Yielding
+ * when 50 ms have passed keeps the page smooth whatever the rows cost, and on a large file
+ * it replaces thousands of needless round trips with about twenty a second.
+ */
+function createPacer() {
+    let last = Date.now();
+    return async (onTick) => {
+        const now = Date.now();
+        if (now - last < 50) {
+            return false;
+        }
+        last = now;
+        if (onTick) {
+            onTick();
+        }
+        await pause();
+        return true;
+    };
+}
 
 async function run() {
     const map = mapping();
@@ -306,11 +378,12 @@ async function run() {
      * split. On a 4.1 million row file that trade is most of a gigabyte against a few seconds.
      */
     const wanted = new Map();
+    const scanPacer = createPacer();
     for (let i = 0; i < body.length; i++) {
-        if (i % 200000 === 0) {
-            el("progress").textContent = "Reading countries, " + i.toLocaleString() + " of " + body.length.toLocaleString();
-            await pause();
-        }
+        await scanPacer(() => {
+            el("progress").textContent = "Reading countries, " + i.toLocaleString()
+                + " of " + body.length.toLocaleString();
+        });
         const f = fieldsFor(body[i], map);
         // effectiveCountry, not resolveCountry: a Puerto Rican row says USA, and loading the
         // US shard for it would fail the row for want of data rather than for want of a rule.
@@ -411,13 +484,13 @@ async function run() {
         }
     };
 
+    const runPacer = createPacer();
     for (let i = 0; i < body.length; i++) {
-        if (i % 2000 === 0) {
+        await runPacer(() => {
             el("progress").textContent = (lookup ? "Collecting places, row " : "Geocoding ")
                 + i.toLocaleString() + " of " + body.length.toLocaleString()
                 + (lookup ? " - " + lookup.size.toLocaleString() + " distinct so far" : "");
-            await pause();
-        }
+        });
 
         /**
          * In lookup mode a place is resolved once, however many rows name it, and the input
