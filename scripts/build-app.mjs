@@ -22,7 +22,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const src = (name) => readFileSync(join(root, "src", name), "utf8");
 
 /** Dependency order, since concatenation has no idea what depends on what. */
-const MODULES = ["fold.js", "gazetteer.js", "locate.js", "table.js", "app.js"];
+const MODULES = ["fold.js", "gazetteer.js", "locate.js", "lookup.js", "table.js", "app.js"];
 
 function flatten(code) {
     return code

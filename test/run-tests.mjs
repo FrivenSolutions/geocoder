@@ -253,6 +253,54 @@ check("Busan, setting on", "Busan||KOR", [35.1028, 129.0403], { acceptDominant: 
 check("Springfield, setting on", { city: "Springfield", state: "", county: "", country: "USA" }, "ambiguous", { acceptDominant: true });
 check("Paris needs no setting", "Paris||FRA", [48.8534, 2.3488]);
 
+console.log("\nThe lookup table: one row per distinct place");
+{
+    const { createLookupTable } = await import("../src/lookup.js");
+    const table = createLookupTable(["City", "State", "Country"]);
+    const resolve = (city, state, country) => () => {
+        const c = effectiveCountry(country, state);
+        if (c !== null) {
+            need(getIndex().ccc[c]);
+        }
+        return locate({ city, state, county: "", country }, { ambiguity: "inhabited" });
+    };
+    let calls = 0;
+    const counted = (city, state, country) => () => {
+        calls++;
+        return resolve(city, state, country)();
+    };
+    for (let i = 0; i < 12; i++) {
+        table.addOnce(["Boston", "MA", "USA"], counted("Boston", "MA", "USA"));
+    }
+    table.addOnce(["Springfield", "IL", "USA"], counted("Springfield", "IL", "USA"));
+    table.addOnce(["BOSTON", "MA", "USA"], counted("BOSTON", "MA", "USA"));
+
+    const rows = table.rows();
+    const expectSize = table.size === 3;
+    const expectCalls = calls === 3;
+    const boston = rows.find((r) => r[0] === "Boston");
+    const expectCount = boston && boston[boston.length - 1] === "12";
+    // Case differs, so these are two keys on purpose: a join matches the bytes that are there.
+    const expectCase = rows.some((r) => r[0] === "BOSTON");
+    const expectHeader = table.header().join(",")
+        === "City,State,Country,Latitude,Longitude,Matched Place,Match Type,Status,Rows";
+    for (const [label, got] of [
+        ["12 Bostons collapse to one row", expectSize],
+        ["resolved once per place, not per row", expectCalls],
+        ["the Rows column counts them", expectCount],
+        ["different case stays a separate key", expectCase],
+        ["the header names the source columns", expectHeader],
+    ]) {
+        if (got) {
+            pass++;
+            console.log("  ok    " + label);
+        } else {
+            fail++;
+            console.log("  FAIL  " + label + "   size=" + table.size + " calls=" + calls);
+        }
+    }
+}
+
 console.log("\nTerritories that GeoNames files as their own countries");
 // "San Juan, PR, USA" is how every US system writes a Puerto Rican address, but there is no
 // US.PR subdivision - PR is a country with its own shard.

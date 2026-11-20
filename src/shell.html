@@ -79,6 +79,19 @@
      US places have none on file, and Moorestown NJ is one of them despite housing 14,000
      people. Where the real town is the one without a census record, this picks wrong. Rows
      decided by either rule say which one in the Status column.</p>
+  <label class="field">
+    <span class="field-name">What the result file should contain</span>
+    <select id="output-format">
+      <option value="rows">Every input row, with coordinates added</option>
+      <option value="lookup">One row per distinct place, to join back on</option>
+    </select>
+    <span class="field-hint">The second is a lookup table. If twelve thousand rows say
+       <code>Boston, MA, US</code>, it appears once, with a <code>Rows</code> column saying how
+       many referred to it. Join it back to your data on the same location columns it was keyed
+       from. It is also far quicker, because each place is resolved once rather than once per
+       mention.</span>
+  </label>
+
   <button id="run">Geocode</button>
   <p class="field-hint">On Chrome and Edge you will be asked where to save first, and the result
      is written to that file as it is produced rather than held in memory. That is what makes a

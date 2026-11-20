@@ -195,6 +195,19 @@ a { color: var(--accent); }
      US places have none on file, and Moorestown NJ is one of them despite housing 14,000
      people. Where the real town is the one without a census record, this picks wrong. Rows
      decided by either rule say which one in the Status column.</p>
+  <label class="field">
+    <span class="field-name">What the result file should contain</span>
+    <select id="output-format">
+      <option value="rows">Every input row, with coordinates added</option>
+      <option value="lookup">One row per distinct place, to join back on</option>
+    </select>
+    <span class="field-hint">The second is a lookup table. If twelve thousand rows say
+       <code>Boston, MA, US</code>, it appears once, with a <code>Rows</code> column saying how
+       many referred to it. Join it back to your data on the same location columns it was keyed
+       from. It is also far quicker, because each place is resolved once rather than once per
+       mention.</span>
+  </label>
+
   <button id="run">Geocode</button>
   <p class="field-hint">On Chrome and Edge you will be asked where to save first, and the result
      is written to that file as it is produced rather than held in memory. That is what makes a
@@ -1021,6 +1034,48 @@ function isLocated(result) {
 }
 
 /**
+ * The Status column for a result: every caveat that applies, or the reason it failed.
+ *
+ * One copy, because there were two - one in the page and one in the command line tool - and
+ * they had already drifted apart once. A third consumer was about to be added.
+ *
+ * Caveats stack deliberately. A row can be both chosen over a smaller namesake and a ghost
+ * town, and hiding either behind the other is how a bad match goes unnoticed.
+ */
+function describeStatus(result) {
+    if (!isLocated(result)) {
+        return result.error;
+    }
+    const notes = [];
+    if (result.approximate) {
+        notes.push("Approximate");
+    }
+    if (result.dominant) {
+        notes.push("Chosen as far larger than the alternatives");
+    }
+    if (result.onlyInhabited) {
+        notes.push("Check: chosen as many times larger than the other candidates");
+    }
+    if (result.adjusted) {
+        notes.push("Check: " + result.adjusted);
+    }
+    if (result.caveat) {
+        notes.push("Check: " + result.caveat);
+    }
+    return notes.length ? notes.join("; ") : "OK";
+}
+
+/** The five columns appended to every geocoded row, in order. */
+const RESULT_COLUMNS = ["Latitude", "Longitude", "Matched Place", "Match Type", "Status"];
+
+/** Those five values for one result, ready to append to a row. */
+function resultCells(result) {
+    return isLocated(result)
+        ? [result.lat.toFixed(4), result.lon.toFixed(4), result.place, result.kind, describeStatus(result)]
+        : ["", "", "", "", describeStatus(result)];
+}
+
+/**
  * Resolves one location.
  *
  * `input` carries the fields already separated: city, state, county and country. The caller is
@@ -1563,6 +1618,94 @@ function splitCombined(text) {
     };
 }
 
+// ---- lookup.js ---------------------------------------------------
+/**
+ * The lookup-table output: one row per distinct location rather than one per input row.
+ *
+ * A file of four million shipments might name forty thousand places. Geocoding it row by row
+ * repeats "Boston, MA, US" twelve thousand times, produces a result file as long as the
+ * input, and leaves whoever receives it to deduplicate before it is any use in a database.
+ * This emits the distinct locations instead, so the result is a dimension table that joins
+ * back to the source on the columns it came from.
+ *
+ * It is also much faster, because a place is resolved once rather than once per mention.
+ */
+
+
+
+/**
+ * The join key: the location cells exactly as the source wrote them, including case.
+ *
+ * Deliberately NOT normalized. The point of this file is to join back to the source table,
+ * and a join matches the bytes that are there - so if a source holds both "Boston" and
+ * "BOSTON", two rows are correct and one would break half the join. Normalizing here would
+ * force every consumer to apply the same normalization on both sides of the ON clause, and
+ * any disagreement about it would silently drop rows.
+ *
+ * The unit separator cannot appear in a CSV field in practice, so it cannot collide with
+ * content the way a comma or a pipe could.
+ */
+function lookupKey(cells) {
+    return cells.map((v) => String(v == null ? "" : v)).join("\u001f");
+}
+
+/**
+ * Collects distinct locations and their results.
+ *
+ * `headers` are the source's own column names for whichever cells form the key, so the output
+ * carries the names the join will be written against rather than invented ones. The caller
+ * decides what those cells are: the separate city, state and country columns where the file
+ * has them, or the single combined column where it does not - which is why the key is passed
+ * in rather than derived from the parsed fields. A file with one "Location" column has to
+ * join on that column's exact text, not on the pieces it was split into.
+ */
+function createLookupTable(headers) {
+    const seen = new Map();
+
+    return {
+        /**
+         * Records one input row, resolving it only if this location has not been seen.
+         *
+         * `produce` is called lazily and at most once per distinct location - that laziness
+         * is the speed of this mode, not an optimization detail. Twelve thousand rows saying
+         * "Boston, MA, US" cost one lookup. Returns the new result, or null for a repeat.
+         */
+        addOnce(cells, produce) {
+            const key = lookupKey(cells);
+            const existing = seen.get(key);
+            if (existing) {
+                existing.count++;
+                return null;
+            }
+            const result = produce();
+            seen.set(key, {
+                cells: cells.map((v) => String(v == null ? "" : v)),
+                result: result,
+                count: 1,
+            });
+            return result;
+        },
+
+        get size() {
+            return seen.size;
+        },
+
+        header() {
+            // "Rows" last, so the geocoding columns sit in the same order as the other output.
+            return headers.concat(RESULT_COLUMNS).concat(["Rows"]);
+        },
+
+        /** The distinct rows, in the order the locations were first seen. */
+        rows() {
+            const out = [];
+            for (const entry of seen.values()) {
+                out.push(entry.cells.concat(resultCells(entry.result)).concat([String(entry.count)]));
+            }
+            return out;
+        },
+    };
+}
+
 // ---- table.js ----------------------------------------------------
 /**
  * Reading and writing the user's file.
@@ -2089,7 +2232,7 @@ async function run() {
     if (window.showSaveFilePicker) {
         try {
             const handle = await window.showSaveFilePicker({
-                suggestedName: state.filename.replace(/\.[^.]+$/, "") + "-geocoded.csv",
+                suggestedName: state.filename.replace(/\.[^.]+$/, "") + (el("output-format").value === "lookup" ? "-places.csv" : "-geocoded.csv"),
                 types: [{ description: "CSV", accept: { "text/csv": [".csv"] } }],
             });
             writable = await handle.createWritable();
@@ -2154,8 +2297,28 @@ async function run() {
         done++;
     }
 
-    const header = (state.hasHeader ? state.rows[0].slice() : state.headers.slice())
-        .concat(["Latitude", "Longitude", "Matched Place", "Match Type", "Status"]);
+    /**
+     * Lookup mode emits one row per distinct location instead of one per input row, so the
+     * result is a dimension table that joins back to the source on the columns it came from.
+     *
+     * The key is whichever columns the location was read from, in the source's own words: the
+     * separate city, state and country columns where the file has them, or the single
+     * combined column where it does not. It has to be the original cells rather than the
+     * parsed fields - a file with one "Location" column joins on that column's exact text.
+     */
+    const lookupMode = el("output-format").value === "lookup";
+    const keyIndexes = map.combined >= 0
+        ? [map.combined]
+        : ["city", "state", "county", "country"].map((r) => map[r]).filter((at) => at >= 0);
+    const keyCells = (row, _map) => keyIndexes.map((at) => row[at]);
+    const lookup = lookupMode
+        ? createLookupTable(keyIndexes.map((at) => state.headers[at]))
+        : null;
+
+    const header = lookup
+        ? lookup.header()
+        : (state.hasHeader ? state.rows[0].slice() : state.headers.slice())
+            .concat(["Latitude", "Longitude", "Matched Place", "Match Type", "Status"]);
 
     /**
      * The result is accumulated as CSV text, in blocks, rather than as a second array of rows.
@@ -2191,37 +2354,63 @@ async function run() {
     let dominant = 0;
     let flagged = 0;
 
+    const tally = (result) => {
+        if (isLocated(result)) {
+            if (result.approximate) {
+                approximate++;
+            } else {
+                ok++;
+                if (result.dominant) {
+                    dominant++;
+                }
+            }
+            if (result.caveat || result.adjusted || result.onlyInhabited) {
+                flagged++;
+            }
+        }
+    };
+
     for (let i = 0; i < body.length; i++) {
         if (i % 2000 === 0) {
-            el("progress").textContent = "Geocoding " + i.toLocaleString() + " of " + body.length.toLocaleString();
+            el("progress").textContent = (lookup ? "Collecting places, row " : "Geocoding ")
+                + i.toLocaleString() + " of " + body.length.toLocaleString()
+                + (lookup ? " - " + lookup.size.toLocaleString() + " distinct so far" : "");
             await pause();
         }
+
+        /**
+         * In lookup mode a place is resolved once, however many rows name it, and the input
+         * row itself is never written out. A file of four million shipments naming forty
+         * thousand places does forty thousand lookups instead of four million.
+         */
+        if (lookup) {
+            const found = lookup.addOnce(keyCells(body[i], map),
+                () => locate(fieldsFor(body[i], map), options));
+            if (found) {
+                tally(found);
+                if (!isLocated(found) && failures.length < 200) {
+                    failures.push([i + (state.hasHeader ? 2 : 1), found.error]);
+                }
+            }
+            // Released here too: the row has been counted and its place recorded, and the
+            // distinct table does not refer back to it.
+            if (writable && i % 5000 === 4999) {
+                const offset = state.hasHeader ? 1 : 0;
+                for (let j = i - 4999; j <= i; j++) {
+                    body[j] = null;
+                    state.rows[j + offset] = null;
+                }
+            }
+            continue;
+        }
+
         const result = locate(fieldsFor(body[i], map), options);
         const row = body[i].slice();
         while (row.length < state.headers.length) {
             row.push("");
         }
         if (isLocated(result)) {
-            // Caveats are additive: a row can be both chosen over a smaller namesake and a
-            // ghost town, and hiding either behind the other is how a bad match goes unnoticed.
-            const notes = [];
-            if (result.approximate) {
-                notes.push("Approximate");
-            }
-            if (result.dominant) {
-                notes.push("Chosen as far larger than the alternatives");
-            }
-            if (result.onlyInhabited) {
-                notes.push("Check: chosen as many times larger than the other candidates");
-            }
-            if (result.adjusted) {
-                notes.push("Check: " + result.adjusted);
-            }
-            if (result.caveat) {
-                notes.push("Check: " + result.caveat);
-            }
-            row.push(result.lat.toFixed(4), result.lon.toFixed(4), result.place, result.kind,
-                notes.length ? notes.join("; ") : "OK");
+            row.push.apply(row, resultCells(result));
             if (result.approximate) {
                 approximate++;
             } else {
@@ -2266,6 +2455,18 @@ async function run() {
             }
         }
     }
+    // The distinct table can only be written once every row has been counted, since the Rows
+    // column is not known until then. It is bounded by the number of distinct places rather
+    // than by the length of the file, which is the whole point of the mode.
+    if (lookup) {
+        for (const row of lookup.rows()) {
+            pending.push(toCsvRow(row));
+            if (pending.length >= 5000) {
+                await flushBlock();
+            }
+        }
+    }
+
     await flushBlock();
     if (writable) {
         await writable.close();
@@ -2275,13 +2476,19 @@ async function run() {
 
     state.output = writable ? null : blocks;
     state.savedAs = savedAs;
-    const failed = body.length - ok - approximate;
+    // In lookup mode the counts are of distinct places, not of input rows, because that is
+    // what was geocoded and what the output file contains.
+    const counted = lookup ? lookup.size : body.length;
+    const failed = counted - ok - approximate;
     el("progress").textContent = "";
     el("progress").className = "status";
-    el("summary").textContent = ok.toLocaleString() + " matched"
+    el("summary").textContent = (lookup
+        ? body.length.toLocaleString() + " rows held " + counted.toLocaleString() + " distinct places. "
+        : "")
+        + ok.toLocaleString() + " matched"
         + (dominant ? " (" + dominant.toLocaleString() + " of them chosen over a much smaller namesake)" : "")
         + ", " + approximate.toLocaleString() + " approximate, " + failed.toLocaleString() + " not placed"
-        + " (" + ((ok + approximate) / body.length * 100).toFixed(1) + "% resolved).";
+        + " (" + ((ok + approximate) / Math.max(counted, 1) * 100).toFixed(1) + "% resolved).";
     el("summary").className = failed ? "status warn" : "status ok";
 
     // Reported separately from the pass/fail counts, because these rows did resolve - the
@@ -2338,7 +2545,7 @@ el("download").addEventListener("click", () => {
     const blob = new Blob([CSV_BOM].concat(state.output), { type: "text/csv;charset=utf-8" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = state.filename.replace(/\.[^.]+$/, "") + "-geocoded.csv";
+    link.download = state.filename.replace(/\.[^.]+$/, "") + (el("output-format").value === "lookup" ? "-places.csv" : "-geocoded.csv");
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

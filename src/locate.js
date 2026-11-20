@@ -497,6 +497,48 @@ export function isLocated(result) {
 }
 
 /**
+ * The Status column for a result: every caveat that applies, or the reason it failed.
+ *
+ * One copy, because there were two - one in the page and one in the command line tool - and
+ * they had already drifted apart once. A third consumer was about to be added.
+ *
+ * Caveats stack deliberately. A row can be both chosen over a smaller namesake and a ghost
+ * town, and hiding either behind the other is how a bad match goes unnoticed.
+ */
+export function describeStatus(result) {
+    if (!isLocated(result)) {
+        return result.error;
+    }
+    const notes = [];
+    if (result.approximate) {
+        notes.push("Approximate");
+    }
+    if (result.dominant) {
+        notes.push("Chosen as far larger than the alternatives");
+    }
+    if (result.onlyInhabited) {
+        notes.push("Check: chosen as many times larger than the other candidates");
+    }
+    if (result.adjusted) {
+        notes.push("Check: " + result.adjusted);
+    }
+    if (result.caveat) {
+        notes.push("Check: " + result.caveat);
+    }
+    return notes.length ? notes.join("; ") : "OK";
+}
+
+/** The five columns appended to every geocoded row, in order. */
+export const RESULT_COLUMNS = ["Latitude", "Longitude", "Matched Place", "Match Type", "Status"];
+
+/** Those five values for one result, ready to append to a row. */
+export function resultCells(result) {
+    return isLocated(result)
+        ? [result.lat.toFixed(4), result.lon.toFixed(4), result.place, result.kind, describeStatus(result)]
+        : ["", "", "", "", describeStatus(result)];
+}
+
+/**
  * Resolves one location.
  *
  * `input` carries the fields already separated: city, state, county and country. The caller is

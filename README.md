@@ -56,6 +56,7 @@ Same column detection as the page, with overrides where the guess is wrong:
 | `--default-country=USA` | used only where a row names no country |
 | `--fallback=none\|state\|country` | as on the page |
 | `--dominant` | accept a candidate vastly larger than its namesakes |
+| `--format=rows|lookup` | every input row, or one row per distinct place |
 
 [releases]: https://github.com/FrivenSolutions/geocoder/releases/latest
 
@@ -84,6 +85,30 @@ browser, so uploaded spreadsheets never reach the server and a single small host
 anyone. Shards are stored gzipped: the image carries 84 MB of data rather than 288 MB, and a US
 lookup downloads 7 MB instead of 26 MB. To update, `git pull` and run the
 same command again.
+
+### Two output shapes
+
+**Every input row, with coordinates added** — the default. Five columns appended, one row out
+per row in.
+
+**One row per distinct place** — a lookup table. If twelve thousand rows say `Boston, MA, US`
+it appears once, with a `Rows` column saying how many referred to it, keyed on the same
+location columns it was read from so it joins straight back:
+
+```sql
+SELECT s.*, p.Latitude, p.Longitude
+FROM shipments s
+LEFT JOIN places p ON p.City = s.City AND p.State = s.State AND p.Country = s.Country
+```
+
+It is also much faster, because a place is resolved once rather than once per mention — on a
+120,000-row file with 8 distinct places, 1.1 s against 2.0 s, and 989 bytes of output against
+14 MB.
+
+The key is **not normalized**, deliberately. If your source holds both `Boston` and `BOSTON`
+you get two rows. A join matches the bytes that are there, so collapsing them here would break
+half of it and force every consumer to apply the same normalization on both sides of the `ON`
+clause.
 
 Five columns are appended to your original file:
 

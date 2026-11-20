@@ -273,7 +273,7 @@ async function run() {
     if (window.showSaveFilePicker) {
         try {
             const handle = await window.showSaveFilePicker({
-                suggestedName: state.filename.replace(/\.[^.]+$/, "") + "-geocoded.csv",
+                suggestedName: state.filename.replace(/\.[^.]+$/, "") + (el("output-format").value === "lookup" ? "-places.csv" : "-geocoded.csv"),
                 types: [{ description: "CSV", accept: { "text/csv": [".csv"] } }],
             });
             writable = await handle.createWritable();
@@ -338,8 +338,28 @@ async function run() {
         done++;
     }
 
-    const header = (state.hasHeader ? state.rows[0].slice() : state.headers.slice())
-        .concat(["Latitude", "Longitude", "Matched Place", "Match Type", "Status"]);
+    /**
+     * Lookup mode emits one row per distinct location instead of one per input row, so the
+     * result is a dimension table that joins back to the source on the columns it came from.
+     *
+     * The key is whichever columns the location was read from, in the source's own words: the
+     * separate city, state and country columns where the file has them, or the single
+     * combined column where it does not. It has to be the original cells rather than the
+     * parsed fields - a file with one "Location" column joins on that column's exact text.
+     */
+    const lookupMode = el("output-format").value === "lookup";
+    const keyIndexes = map.combined >= 0
+        ? [map.combined]
+        : ["city", "state", "county", "country"].map((r) => map[r]).filter((at) => at >= 0);
+    const keyCells = (row, _map) => keyIndexes.map((at) => row[at]);
+    const lookup = lookupMode
+        ? createLookupTable(keyIndexes.map((at) => state.headers[at]))
+        : null;
+
+    const header = lookup
+        ? lookup.header()
+        : (state.hasHeader ? state.rows[0].slice() : state.headers.slice())
+            .concat(["Latitude", "Longitude", "Matched Place", "Match Type", "Status"]);
 
     /**
      * The result is accumulated as CSV text, in blocks, rather than as a second array of rows.
@@ -375,37 +395,63 @@ async function run() {
     let dominant = 0;
     let flagged = 0;
 
+    const tally = (result) => {
+        if (isLocated(result)) {
+            if (result.approximate) {
+                approximate++;
+            } else {
+                ok++;
+                if (result.dominant) {
+                    dominant++;
+                }
+            }
+            if (result.caveat || result.adjusted || result.onlyInhabited) {
+                flagged++;
+            }
+        }
+    };
+
     for (let i = 0; i < body.length; i++) {
         if (i % 2000 === 0) {
-            el("progress").textContent = "Geocoding " + i.toLocaleString() + " of " + body.length.toLocaleString();
+            el("progress").textContent = (lookup ? "Collecting places, row " : "Geocoding ")
+                + i.toLocaleString() + " of " + body.length.toLocaleString()
+                + (lookup ? " - " + lookup.size.toLocaleString() + " distinct so far" : "");
             await pause();
         }
+
+        /**
+         * In lookup mode a place is resolved once, however many rows name it, and the input
+         * row itself is never written out. A file of four million shipments naming forty
+         * thousand places does forty thousand lookups instead of four million.
+         */
+        if (lookup) {
+            const found = lookup.addOnce(keyCells(body[i], map),
+                () => locate(fieldsFor(body[i], map), options));
+            if (found) {
+                tally(found);
+                if (!isLocated(found) && failures.length < 200) {
+                    failures.push([i + (state.hasHeader ? 2 : 1), found.error]);
+                }
+            }
+            // Released here too: the row has been counted and its place recorded, and the
+            // distinct table does not refer back to it.
+            if (writable && i % 5000 === 4999) {
+                const offset = state.hasHeader ? 1 : 0;
+                for (let j = i - 4999; j <= i; j++) {
+                    body[j] = null;
+                    state.rows[j + offset] = null;
+                }
+            }
+            continue;
+        }
+
         const result = locate(fieldsFor(body[i], map), options);
         const row = body[i].slice();
         while (row.length < state.headers.length) {
             row.push("");
         }
         if (isLocated(result)) {
-            // Caveats are additive: a row can be both chosen over a smaller namesake and a
-            // ghost town, and hiding either behind the other is how a bad match goes unnoticed.
-            const notes = [];
-            if (result.approximate) {
-                notes.push("Approximate");
-            }
-            if (result.dominant) {
-                notes.push("Chosen as far larger than the alternatives");
-            }
-            if (result.onlyInhabited) {
-                notes.push("Check: chosen as many times larger than the other candidates");
-            }
-            if (result.adjusted) {
-                notes.push("Check: " + result.adjusted);
-            }
-            if (result.caveat) {
-                notes.push("Check: " + result.caveat);
-            }
-            row.push(result.lat.toFixed(4), result.lon.toFixed(4), result.place, result.kind,
-                notes.length ? notes.join("; ") : "OK");
+            row.push.apply(row, resultCells(result));
             if (result.approximate) {
                 approximate++;
             } else {
@@ -450,6 +496,18 @@ async function run() {
             }
         }
     }
+    // The distinct table can only be written once every row has been counted, since the Rows
+    // column is not known until then. It is bounded by the number of distinct places rather
+    // than by the length of the file, which is the whole point of the mode.
+    if (lookup) {
+        for (const row of lookup.rows()) {
+            pending.push(toCsvRow(row));
+            if (pending.length >= 5000) {
+                await flushBlock();
+            }
+        }
+    }
+
     await flushBlock();
     if (writable) {
         await writable.close();
@@ -459,13 +517,19 @@ async function run() {
 
     state.output = writable ? null : blocks;
     state.savedAs = savedAs;
-    const failed = body.length - ok - approximate;
+    // In lookup mode the counts are of distinct places, not of input rows, because that is
+    // what was geocoded and what the output file contains.
+    const counted = lookup ? lookup.size : body.length;
+    const failed = counted - ok - approximate;
     el("progress").textContent = "";
     el("progress").className = "status";
-    el("summary").textContent = ok.toLocaleString() + " matched"
+    el("summary").textContent = (lookup
+        ? body.length.toLocaleString() + " rows held " + counted.toLocaleString() + " distinct places. "
+        : "")
+        + ok.toLocaleString() + " matched"
         + (dominant ? " (" + dominant.toLocaleString() + " of them chosen over a much smaller namesake)" : "")
         + ", " + approximate.toLocaleString() + " approximate, " + failed.toLocaleString() + " not placed"
-        + " (" + ((ok + approximate) / body.length * 100).toFixed(1) + "% resolved).";
+        + " (" + ((ok + approximate) / Math.max(counted, 1) * 100).toFixed(1) + "% resolved).";
     el("summary").className = failed ? "status warn" : "status ok";
 
     // Reported separately from the pass/fail counts, because these rows did resolve - the
@@ -522,7 +586,7 @@ el("download").addEventListener("click", () => {
     const blob = new Blob([CSV_BOM].concat(state.output), { type: "text/csv;charset=utf-8" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = state.filename.replace(/\.[^.]+$/, "") + "-geocoded.csv";
+    link.download = state.filename.replace(/\.[^.]+$/, "") + (el("output-format").value === "lookup" ? "-places.csv" : "-geocoded.csv");
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

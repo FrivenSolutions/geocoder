@@ -10,6 +10,7 @@
  *     --fallback=none|state|country
  *     --ambiguity=none|dominant|inhabited   how hard to try when a name is shared
  *     --dominant             shorthand for --ambiguity=dominant
+ *     --format=rows|lookup   every input row, or one row per distinct place
  *
  * The page does the same work and is nicer to use, but it has a ceiling: a browser tab holds
  * the parsed rows, and building a result there costs roughly two and a half times the input.
@@ -40,7 +41,8 @@ const dataDir = join(root, "dist", "data");
 globalThis.window = globalThis;
 globalThis.document = { createElement: () => ({}), head: { appendChild: () => {} } };
 
-const { locate, splitCombined, resolveCountry, effectiveCountry, isLocated } = await import("../src/locate.js");
+const { locate, splitCombined, resolveCountry, effectiveCountry, isLocated, resultCells, RESULT_COLUMNS } = await import("../src/locate.js");
+const { createLookupTable } = await import("../src/lookup.js");
 const { getIndex } = await import("../src/gazetteer.js");
 const { sniffDelimiter, parseDelimited, detectColumns, looksLikeHeader, toCsvRow, CSV_BOM } =
     await import("../src/table.js");
@@ -61,7 +63,8 @@ if (!input || !existsSync(input)) {
     console.error("usage: node scripts/geocode.mjs input.csv [output.csv] [options]");
     process.exit(1);
 }
-const output = positional[1] || input.replace(/\.[^.]+$/, "") + "-geocoded.csv";
+const output = positional[1]
+    || input.replace(/\.[^.]+$/, "") + ((flags.format || "rows") === "lookup" ? "-places.csv" : "-geocoded.csv");
 
 if (!existsSync(join(dataDir, "index.js"))) {
     console.error("No place data. Unzip geocoder-data.zip into dist/, or run scripts/build-gazetteer.mjs.");
@@ -196,7 +199,21 @@ const write = (text) => {
     return null;
 };
 
-await write(CSV_BOM + toCsvRow(headers.concat(["Latitude", "Longitude", "Matched Place", "Match Type", "Status"])));
+/**
+ * Lookup mode emits one row per distinct location rather than one per input row, keyed on
+ * whichever columns the location was read from so the result joins back to the source.
+ *
+ * It is the one mode that holds something proportional to the data, but proportional to the
+ * number of distinct PLACES rather than to the length of the file - which is the point of
+ * it. Four million shipments naming forty thousand towns cost forty thousand entries.
+ */
+const lookupMode = (flags.format || "rows") === "lookup";
+const keyIndexes = map.combined >= 0
+    ? [map.combined]
+    : ["city", "state", "county", "country"].map((r) => map[r]).filter((at) => at >= 0);
+const lookup = lookupMode ? createLookupTable(keyIndexes.map((at) => headers[at])) : null;
+
+await write(CSV_BOM + toCsvRow(lookup ? lookup.header() : headers.concat(RESULT_COLUMNS)));
 
 let ok = 0;
 let approximate = 0;
@@ -204,41 +221,8 @@ let flagged = 0;
 let failed = 0;
 let n = 0;
 let first = true;
-for await (const row of records(input, delimiter)) {
-    if (first && hasHeader) {
-        first = false;
-        continue;
-    }
-    first = false;
-    n++;
-    if (n % 200000 === 0) {
-        process.stdout.write("\r  geocoding " + n.toLocaleString() + " of " + total.toLocaleString()
-            + "   heap " + Math.round(process.memoryUsage().heapUsed / 1048576) + " MB");
-    }
-    const result = locate(fieldsFor(row), options);
-    const line = row.slice();
-    while (line.length < headers.length) {
-        line.push("");
-    }
+const tally = (result) => {
     if (isLocated(result)) {
-        const notes = [];
-        if (result.approximate) {
-            notes.push("Approximate");
-        }
-        if (result.dominant) {
-            notes.push("Chosen as far larger than the alternatives");
-        }
-        if (result.onlyInhabited) {
-            notes.push("Check: chosen as many times larger than the other candidates");
-        }
-        if (result.adjusted) {
-            notes.push("Check: " + result.adjusted);
-        }
-        if (result.caveat) {
-            notes.push("Check: " + result.caveat);
-        }
-        line.push(result.lat.toFixed(4), result.lon.toFixed(4), result.place, result.kind,
-            notes.length ? notes.join("; ") : "OK");
         if (result.approximate) {
             approximate++;
         } else {
@@ -248,19 +232,65 @@ for await (const row of records(input, delimiter)) {
             flagged++;
         }
     } else {
-        line.push("", "", "", "", result.error);
         failed++;
     }
+};
+
+for await (const row of records(input, delimiter)) {
+    if (first && hasHeader) {
+        first = false;
+        continue;
+    }
+    first = false;
+    n++;
+    if (n % 200000 === 0) {
+        process.stdout.write("\r  " + (lookup ? "collecting " : "geocoding ") + n.toLocaleString()
+            + " of " + total.toLocaleString()
+            + (lookup ? "   " + lookup.size.toLocaleString() + " distinct" : "")
+            + "   heap " + Math.round(process.memoryUsage().heapUsed / 1048576) + " MB");
+    }
+
+    if (lookup) {
+        // Resolved once per distinct place, not once per mention.
+        const found = lookup.addOnce(keyIndexes.map((at) => row[at]), () => locate(fieldsFor(row), options));
+        if (found) {
+            tally(found);
+        }
+        continue;
+    }
+
+    const result = locate(fieldsFor(row), options);
+    const line = row.slice();
+    while (line.length < headers.length) {
+        line.push("");
+    }
+    line.push.apply(line, resultCells(result));
+    tally(result);
     const wait = write(toCsvRow(line));
     if (wait) {
         await wait;
     }
 }
+
+// The distinct table is written at the end, because the Rows count is not final until the
+// last input row has been read.
+if (lookup) {
+    for (const line of lookup.rows()) {
+        const wait = write(toCsvRow(line));
+        if (wait) {
+            await wait;
+        }
+    }
+}
 await new Promise((resolve) => out.end(resolve));
 
+const counted = lookup ? lookup.size : total;
 console.log("\routput      " + output + "                                        ");
+if (lookup) {
+    console.log("            " + total.toLocaleString() + " rows held " + counted.toLocaleString() + " distinct places");
+}
 console.log("            " + ok.toLocaleString() + " matched, " + approximate.toLocaleString()
     + " approximate, " + failed.toLocaleString() + " not placed ("
-    + ((ok + approximate) / Math.max(total, 1) * 100).toFixed(1) + "% resolved)");
+    + ((ok + approximate) / Math.max(counted, 1) * 100).toFixed(1) + "% resolved)");
 console.log("            " + flagged.toLocaleString() + " flagged \"Check:\" in the Status column");
 console.log("            peak heap " + Math.round(process.memoryUsage().heapUsed / 1048576) + " MB");
