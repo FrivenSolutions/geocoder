@@ -311,7 +311,10 @@ async function run() {
             el("progress").textContent = "Reading countries, " + i.toLocaleString() + " of " + body.length.toLocaleString();
             await pause();
         }
-        const country = resolveCountry(fieldsFor(body[i], map).country || options.defaultCountry);
+        const f = fieldsFor(body[i], map);
+        // effectiveCountry, not resolveCountry: a Puerto Rican row says USA, and loading the
+        // US shard for it would fail the row for want of data rather than for want of a rule.
+        const country = effectiveCountry(f.country || options.defaultCountry, f.state);
         if (country !== null) {
             const cc = getIndex().ccc[country];
             wanted.set(cc, (wanted.get(cc) || 0) + 1);

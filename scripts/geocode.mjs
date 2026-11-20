@@ -40,7 +40,7 @@ const dataDir = join(root, "dist", "data");
 globalThis.window = globalThis;
 globalThis.document = { createElement: () => ({}), head: { appendChild: () => {} } };
 
-const { locate, splitCombined, resolveCountry, isLocated } = await import("../src/locate.js");
+const { locate, splitCombined, resolveCountry, effectiveCountry, isLocated } = await import("../src/locate.js");
 const { getIndex } = await import("../src/gazetteer.js");
 const { sniffDelimiter, parseDelimited, detectColumns, looksLikeHeader, toCsvRow, CSV_BOM } =
     await import("../src/table.js");
@@ -170,7 +170,8 @@ for await (const row of records(input, delimiter)) {
     if (seen % 500000 === 0) {
         process.stdout.write("\r  scanning " + seen.toLocaleString());
     }
-    const country = resolveCountry(fieldsFor(row).country || options.defaultCountry);
+    const f = fieldsFor(row);
+    const country = effectiveCountry(f.country || options.defaultCountry, f.state);
     if (country !== null) {
         const cc = getIndex().ccc[country];
         wanted.set(cc, (wanted.get(cc) || 0) + 1);

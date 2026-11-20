@@ -5,7 +5,7 @@
 #
 # The place data is downloaded from the GitHub release at build time rather than copied from
 # the build context, because it is not in the repository (see README). Pin a version with
-#   docker compose build --build-arg DATA_URL=https://github.com/justinfritts/geocoder/releases/download/v0.2.0/geocoder-data.zip
+#   docker compose build --build-arg DATA_URL=https://github.com/FrivenSolutions/geocoder/releases/download/v0.2.0/geocoder-data.zip
 
 # ---- app: rebuild the single HTML file from src/, so the image always matches the source
 FROM node:22-alpine AS app
@@ -17,7 +17,7 @@ RUN node scripts/build-app.mjs
 
 # ---- data: fetch the gazetteer and pre-compress every shard
 FROM alpine:3.20 AS data
-ARG DATA_URL=https://github.com/justinfritts/geocoder/releases/latest/download/geocoder-data.zip
+ARG DATA_URL=https://github.com/FrivenSolutions/geocoder/releases/latest/download/geocoder-data.zip
 RUN apk add --no-cache unzip
 WORKDIR /build
 ADD ${DATA_URL} geocoder-data.zip

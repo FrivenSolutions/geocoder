@@ -57,7 +57,7 @@ Same column detection as the page, with overrides where the guess is wrong:
 | `--fallback=none\|state\|country` | as on the page |
 | `--dominant` | accept a candidate vastly larger than its namesakes |
 
-[releases]: https://github.com/justinfritts/geocoder/releases/latest
+[releases]: https://github.com/FrivenSolutions/geocoder/releases/latest
 
 The data is a release asset rather than a committed file because Git keeps every version of
 everything forever. At 288 MB unpacked, each rebuild would add another 288 MB to the
@@ -71,13 +71,13 @@ four clones a month. A release asset has neither limit and can be replaced in pl
 To run it on a server so anyone on the network can use it from a browser:
 
 ```bash
-git clone https://github.com/justinfritts/geocoder.git && cd geocoder
+git clone https://github.com/FrivenSolutions/geocoder/geocoder.git && cd geocoder
 docker compose up -d --build
 ```
 
 Then open `http://<host>:8231`. The build downloads the latest data release itself, so the
 clone does not need it. To pin a data version, pass
-`--build-arg DATA_URL=https://github.com/justinfritts/geocoder/releases/download/v0.2.0/geocoder-data.zip`.
+`--build-arg DATA_URL=https://github.com/FrivenSolutions/geocoder/releases/download/v0.2.0/geocoder-data.zip`.
 
 The container is only nginx serving static files. Geocoding still runs in each visitor's
 browser, so uploaded spreadsheets never reach the server and a single small host can serve

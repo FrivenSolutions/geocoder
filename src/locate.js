@@ -279,6 +279,74 @@ const COUNTRY_ALIAS = {
     unitedkingdomofgreatbritainandnorthernireland: "GB", hongkongsar: "HK", macaosar: "MO",
 };
 
+/**
+ * Territories that GeoNames files as countries of their own, keyed by the parent whose state
+ * column they turn up in.
+ *
+ * "San Juan, PR, USA" is how every US system writes a Puerto Rican address, but there is no
+ * US.PR subdivision in GeoNames - Puerto Rico is country PR, with its own 4,090 places in its
+ * own shard. The same is true of Guam, the Virgin Islands, Jersey, Martinique and Aruba.
+ *
+ * Left alone these do not merely miss. Where the parent country has a namesake they resolve
+ * to it and say nothing: "Douglas, IM, GBR" returned a village in South Lanarkshire rather
+ * than the capital of the Isle of Man, and "Saint Helier, JE, GBR" a suburb of London.
+ *
+ * Only codes that are not also a subdivision of the parent appear here, so nothing is
+ * shadowed: none of PR, VI, GU, AS or MP is a US state, and none of IM, JE or GG is a part of
+ * the United Kingdom as GeoNames models it.
+ */
+const TERRITORY = {
+    US: {
+        pr: "PR", puertorico: "PR", vi: "VI", virginislands: "VI", usvi: "VI",
+        gu: "GU", guam: "GU", as: "AS", americansamoa: "AS",
+        mp: "MP", northernmarianaislands: "MP", um: "UM",
+        fm: "FM", micronesia: "FM", mh: "MH", marshallislands: "MH", pw: "PW", palau: "PW",
+    },
+    GB: {
+        im: "IM", isleofman: "IM", je: "JE", jersey: "JE", gg: "GG", guernsey: "GG",
+        gi: "GI", gibraltar: "GI",
+    },
+    FR: {
+        gp: "GP", guadeloupe: "GP", mq: "MQ", martinique: "MQ", gf: "GF", frenchguiana: "GF",
+        re: "RE", reunion: "RE", yt: "YT", mayotte: "YT", pm: "PM", wf: "WF",
+        pf: "PF", frenchpolynesia: "PF", nc: "NC", newcaledonia: "NC", bl: "BL", mf: "MF",
+    },
+    NL: { aw: "AW", aruba: "AW", cw: "CW", curacao: "CW", sx: "SX", bq: "BQ" },
+    DK: { fo: "FO", faroeislands: "FO", gl: "GL", greenland: "GL" },
+    NO: { sj: "SJ", svalbard: "SJ" },
+    FI: { ax: "AX", aland: "AX" },
+    AU: { cx: "CX", cc: "CC", nf: "NF", norfolkisland: "NF" },
+    NZ: { ck: "CK", nu: "NU", tk: "TK" },
+    CN: { hk: "HK", hongkong: "HK", mo: "MO", macau: "MO", macao: "MO" },
+};
+
+/**
+ * The country a row actually belongs to, once a territory in the state column is accounted
+ * for. Returns an index into the country tables, or null.
+ *
+ * Exported because the caller has to know this before the resolver runs: the app loads one
+ * shard per country it finds, and a Puerto Rican row that reported itself as US would have
+ * the wrong shard loaded and fail for want of data rather than for want of a rule.
+ */
+export function effectiveCountry(countryToken, stateToken) {
+    const idx = getIndex();
+    const country = resolveCountry(countryToken);
+    if (country === null || !stateToken || !idx) {
+        return country;
+    }
+    const table = TERRITORY[idx.ccc[country]];
+    if (!table) {
+        return country;
+    }
+    const target = table[fold(stateToken)];
+    if (!target) {
+        return country;
+    }
+    const at = idx.ccIndex.get(target);
+    // Only redirect somewhere the gazetteer actually has data for.
+    return at === undefined || !idx.shards[target] ? country : at;
+}
+
 /** Accepts ISO 3166-1 alpha-3 (documented), alpha-2, or a recognized name. */
 export function resolveCountry(token) {
     const idx = getIndex();
@@ -447,7 +515,10 @@ export function locate(input, options) {
     if (!countryToken) {
         return { error: "No country given, and no default country is set" };
     }
-    const country = resolveCountry(countryToken);
+    // The state is read before the country, because a territory sitting in the state column
+    // decides which country the row is really in: PR means Puerto Rico, not a US state.
+    const rawState = String(input.state == null ? "" : input.state).trim();
+    const country = effectiveCountry(countryToken, rawState);
     if (country === null) {
         return { error: 'Unknown country "' + String(countryToken).trim() + '" - use an ISO 3166-1 alpha-3 code such as USA or NLD' };
     }
@@ -467,7 +538,16 @@ export function locate(input, options) {
      * row would lose data we can place perfectly well; discarding the TOKEN is safe because the
      * match still has to be unique on city and country alone, so nothing is being guessed.
      */
-    const stateToken = String(input.state == null ? "" : input.state).trim();
+    /**
+     * Where the state named a territory, it has already been spent choosing the country and
+     * must not be read again as a subdivision of it. "San Juan, PR, USA" is a row about
+     * Puerto Rico, not about a subdivision of Puerto Rico called PR - and leaving the token
+     * in play would have the resolver set it aside as unrecognized and then mention it in any
+     * ambiguity message, which reads as a fault in the user's data rather than a handled case.
+     */
+    const stateToken = country === resolveCountry(countryToken)
+        ? rawState
+        : "";
     let subdivision = null;
     let ignoredState = false;
     if (stateToken) {

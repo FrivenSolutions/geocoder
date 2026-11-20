@@ -25,7 +25,7 @@ if (!existsSync(join(data, "index.js"))) {
 globalThis.window = globalThis;
 globalThis.document = { createElement: () => ({}), head: { appendChild: () => {} } };
 
-const { locate, splitCombined, resolveCountry } = await import("../src/locate.js");
+const { locate, splitCombined, resolveCountry, effectiveCountry } = await import("../src/locate.js");
 const { getIndex } = await import("../src/gazetteer.js");
 
 const feed = (file) => new Function(readFileSync(join(data, file), "utf8"))();
@@ -48,7 +48,7 @@ let fail = 0;
  */
 function check(label, input, expect, options) {
     const fields = typeof input === "string" ? splitCombined(input) : input;
-    const country = resolveCountry(fields.country || (options && options.defaultCountry) || "");
+    const country = effectiveCountry(fields.country || (options && options.defaultCountry) || "", fields.state);
     if (country !== null) {
         need(getIndex().ccc[country]);
     }
@@ -76,7 +76,7 @@ function check(label, input, expect, options) {
 
 /** Asserts the weaker ambiguity rule reports itself distinctly from the stronger one. */
 function checkChosen(label, input) {
-    const country = resolveCountry(input.country);
+    const country = effectiveCountry(input.country, input.state);
     if (country !== null) {
         need(getIndex().ccc[country]);
     }
@@ -115,7 +115,7 @@ function checkDistinct(label, a, b) {
 /** Asserts what a matched row says about itself, rather than where it landed. */
 function checkFlag(label, input, expectCaveat) {
     const fields = typeof input === "string" ? splitCombined(input) : input;
-    const country = resolveCountry(fields.country);
+    const country = effectiveCountry(fields.country, fields.state);
     if (country !== null) {
         need(getIndex().ccc[country]);
     }
@@ -244,6 +244,23 @@ check("Busan, setting off", "Busan||KOR", "ambiguous");
 check("Busan, setting on", "Busan||KOR", [35.1028, 129.0403], { acceptDominant: true });
 check("Springfield, setting on", { city: "Springfield", state: "", county: "", country: "USA" }, "ambiguous", { acceptDominant: true });
 check("Paris needs no setting", "Paris||FRA", [48.8534, 2.3488]);
+
+console.log("\nTerritories that GeoNames files as their own countries");
+// "San Juan, PR, USA" is how every US system writes a Puerto Rican address, but there is no
+// US.PR subdivision - PR is a country with its own shard.
+check("San Juan, PR, USA", "San Juan|PR|USA", [18.4663, -66.1057, 0.3]);
+check("Ponce, PR, USA", "Ponce|PR|USA", [18.0111, -66.6141, 0.3]);
+check("Charlotte Amalie, VI, USA", "Charlotte Amalie|VI|USA", [18.3419, -64.9307, 0.3]);
+check("Hagatna, GU, USA", "Hagatna|GU|USA", [13.4745, 144.7504, 0.3]);
+check("Saipan, MP, USA", "Saipan|MP|USA", [15.2123, 145.7545, 0.4]);
+// These two were worse than misses: the parent country had a namesake and won silently.
+check("Douglas, IM, GBR is the Manx one", "Douglas|IM|GBR", [54.1500, -4.4819, 0.2]);
+check("Saint Helier, JE, GBR is the Jersey one", "Saint Helier|JE|GBR", [49.1869, -2.1070, 0.2]);
+check("Fort-de-France, MQ, FRA", "Fort-de-France|MQ|FRA", [14.6036, -61.0667, 0.3]);
+check("Oranjestad, AW, NLD", "Oranjestad|AW|NLD", [12.5240, -70.0270, 0.3]);
+// A real US state must not be mistaken for a territory.
+check("Portland, OR, USA still works", "Portland|OR|USA", [45.5234, -122.6762, 0.2]);
+check("Providence, RI, USA still works", "Providence|RI|USA", [41.8240, -71.4128, 0.2]);
 
 console.log("\nSettlement-type words, and CITY - DISTRICT");
 check("MOSHAV TNUVOT", "MOSHAV TNUVOT||ISRAEL", [32.31, 34.94, 0.4]);
