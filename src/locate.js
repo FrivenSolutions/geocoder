@@ -1010,6 +1010,65 @@ export function locate(input, options) {
         }
     }
 
+    /**
+     * The candidates cannot be told apart, but they all sit inside one administrative area,
+     * so the area itself is an honest answer.
+     *
+     * This is the one ambiguity that has a defensible answer without picking a winner. Five
+     * places called Greenwood in Indiana are five different places, and nothing in the row
+     * says which - but every one of them IS in Indiana, so the centre of Indiana is wrong only
+     * by the size of Indiana. Compare the alternatives: choosing the largest is a guess that
+     * can be wrong by the width of the country, and leaving the row blank discards a
+     * constraint the data actually gave us.
+     *
+     * It does not touch the case it should not. "Springfield, USA" spans Missouri,
+     * Massachusetts and Illinois, there is no shared area smaller than the country, and it
+     * stays ambiguous - which is the whole reason this is keyed on a SHARED area rather than
+     * on falling back to the country.
+     *
+     * The county is tried first because it is enormously tighter where it holds: Greenwood's
+     * namesakes inside one county are within a few miles of each other, where a state centre
+     * can be a hundred off. Both are marked Approximate and both say in their own text which
+     * area they were placed at, so neither is mistakable for a real coordinate.
+     */
+    if (matches.length > 1 && !allWithinTolerance(matches, shard, scale)
+        && (opts.ambiguousFallback || "none") === "area") {
+        const shared = (field, points, names) => {
+            const first = field[matches[0]];
+            if (first < 0 || !points[first] || !names[first]) {
+                return -1;
+            }
+            for (const row of matches) {
+                if (field[row] !== first) {
+                    return -1;
+                }
+            }
+            return first;
+        };
+        const area = [
+            [shared(shard.a2, idx.a2p, idx.a2n), idx.a2p, idx.a2n, "county centre"],
+            [shared(shard.a1, idx.a1p, idx.a1n), idx.a1p, idx.a1n, "subdivision centre"],
+        ].find((entry) => entry[0] >= 0);
+        if (area) {
+            const point = area[1][area[0]];
+            const name = area[2][area[0]];
+            const note = matches.length + ' places called "' + cityText + '" share '
+                + name + ' - shown at its centre, not at any of them';
+            return {
+                lat: point[1] / scale,
+                lon: point[0] / scale,
+                place: cityText + " - shown at the centre of " + name + ", " + countryName(country),
+                kind: area[3],
+                approximate: true,
+                sharedArea: true,
+                // Any earlier repair is kept alongside rather than replaced: a name that had
+                // to be adjusted AND then turned out ambiguous is two things to check, and
+                // dropping either is how a bad row looks clean.
+                adjusted: adjusted ? adjusted + "; " + note : note,
+            };
+        }
+    }
+
     if (matches.length > 1 && !allWithinTolerance(matches, shard, scale)) {
         const where = listCandidates(matches, shard, country, 4);
         // Only now does an unusable subdivision matter: it was the thing that would have

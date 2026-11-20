@@ -56,6 +56,7 @@ Same column detection as the page, with overrides where the guess is wrong:
 | `--default-country=USA` | used only where a row names no country |
 | `--fallback=none\|state\|country` | as on the page |
 | `--dominant` | accept a candidate vastly larger than its namesakes |
+| `--ambiguous-fallback=none|area` | place a still-ambiguous row at the centre of the area its candidates share |
 | `--format=rows|lookup` | every input row, or one row per distinct place |
 
 [releases]: https://github.com/FrivenSolutions/geocoder/releases/latest
@@ -250,6 +251,24 @@ separate a real choice from a non-choice:
 
 Nobody writing a spreadsheet meant the hamlet. Nobody can honestly pick between the three
 Springfields, and the leader changes with the census. Rows decided this way say so in `Status`.
+
+**Use the centre of the smallest area every candidate shares.** The one ambiguity with an
+answer that is not a guess. Five places called `Greenwood` in Indiana are five different
+places and nothing in the row says which — but all five *are* in Indiana, so Indiana's centre
+is wrong only by the size of Indiana, where picking the largest can be wrong by the width of
+the country. Where the candidates also share a county, the county centre is used instead,
+which is tighter by an order of magnitude.
+
+| | Candidates | Setting on |
+|---|---|---|
+| `Roberts, FL` | 3 places, all in Hillsborough County, none with a population | Hillsborough County's centre |
+| `Greenwood, IN` | 4 places, in four Indiana counties | Indiana's centre |
+| `Springfield, USA` | 87 places, spread across more than 30 states | still ambiguous |
+
+Springfield is untouched because its candidates share nothing smaller than the United States,
+which is the reason this is keyed on a shared *area* rather than on climbing to the country.
+These rows are marked `Approximate`, and `Status` says which area they were placed at and how
+many candidates there were.
 
 ## Coverage
 

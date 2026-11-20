@@ -134,6 +134,27 @@ function checkFlag(label, input, expectCaveat) {
     }
 }
 
+
+/** Asserts an area-centre result names the area it was placed at, and at which level. */
+function checkArea(label, input, expectKind, expectName) {
+    const fields = typeof input === "string" ? splitCombined(input) : input;
+    const country = effectiveCountry(fields.country, fields.state);
+    if (country !== null) {
+        need(getIndex().ccc[country]);
+    }
+    const got = locate(fields, { ambiguousFallback: "area" });
+    const ok = got.lat !== undefined && got.sharedArea === true && got.approximate === true
+        && got.kind === expectKind && String(got.place).includes(expectName)
+        && String(got.adjusted).includes("share " + expectName);
+    const detail = got.error || (got.kind + "  " + got.place + "  [" + got.adjusted + "]");
+    if (ok) {
+        pass++;
+        console.log("  ok    " + label.padEnd(42) + detail);
+    } else {
+        fail++;
+        console.log("  FAIL  " + label.padEnd(42) + detail);
+    }
+}
 console.log("\nThe three the Flow Map's coverage note called unreachable");
 // All present now: the first two because no population threshold is applied at all, the third
 // because the facility slice carries feature class S, which no cities* file does.
@@ -359,5 +380,32 @@ check("country level still prefers the state", "Notaplaceatall|MA|USA", [42.2, -
 check("no city named, no setting", "||AUS", [-25.0, 134.0, 6]);
 check("old option name still honoured", "Notaplaceatall|MA|USA", [42.2, -71.7, 1.5], { approximateToSubdivision: true });
 
+
+console.log("\nAmbiguous rows with one shared area, blank by default");
+const AREA = { ambiguousFallback: "area" };
+// Four Greenwoods in Indiana, in four different counties. Nothing says which, but all four
+// are in Indiana, so Indiana's centre is wrong only by the size of Indiana.
+check("Greenwood IN, blank by default", "Greenwood|IN|USA", "ambiguous");
+check("Greenwood IN, to the state centre", "Greenwood|IN|USA", [39.91, -86.27, 0.3], AREA);
+check("Franklin OH, to the state centre", "Franklin|OH|USA", [40.30, -82.68, 0.3], AREA);
+// Where they also share a county the county is used, which is tighter by an order of
+// magnitude - 0.1 degrees from the candidates rather than two or three.
+check("Roberts FL, to the county centre", "Roberts|FL|USA", [27.98, -82.38, 0.3], AREA);
+check("Pleasant Hill ME, to the county centre", "Pleasant Hill|ME|USA", [43.78, -70.31, 0.3], AREA);
+check("Bridgetown PA, to the county centre", "Bridgetown|PA|USA", [40.29, -75.08, 0.3], AREA);
+checkArea("Roberts FL says it is a county centre", "Roberts|FL|USA", "county centre", "Hillsborough County");
+checkArea("Greenwood IN says it is a state centre", "Greenwood|IN|USA", "subdivision centre", "Indiana");
+// The case this must NOT touch, and the reason it is keyed on a shared area rather than on
+// falling back to the country: Springfield spans Missouri, Massachusetts and Illinois, which
+// share nothing smaller than the United States.
+check("Springfield USA still ambiguous", "Springfield||USA", "ambiguous", AREA);
+check("Springfield USA, with the other rules too", "Springfield||USA", "ambiguous",
+    { ambiguity: "inhabited", fallback: "country", ambiguousFallback: "area" });
+// An exact answer always beats an approximate one, so a rule that picks a real place runs
+// first. Greenwood, Indiana resolves to Johnson County's town at 55,586 under "inhabited".
+check("a real match outranks the area centre", "Greenwood|IN|USA", [39.61, -86.11, 0.3],
+    { ambiguity: "inhabited", ambiguousFallback: "area" });
+// Unambiguous rows are untouched by the setting.
+check("unambiguous row unaffected", "Lebanon|PA|USA", [40.3409, -76.4113], AREA);
 console.log("\n  " + pass + " passed, " + fail + " failed\n");
 process.exit(fail ? 1 : 0);

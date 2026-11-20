@@ -10,6 +10,8 @@
  *     --fallback=none|state|country
  *     --ambiguity=none|dominant|inhabited   how hard to try when a name is shared
  *     --dominant             shorthand for --ambiguity=dominant
+ *     --ambiguous-fallback=none|area   place rows still ambiguous at the centre of the
+ *                            smallest administrative area every candidate shares
  *     --format=rows|lookup   every input row, or one row per distinct place
  *
  * The page does the same work and is nicer to use, but it has a ceiling: a browser tab holds
@@ -84,6 +86,7 @@ const options = {
     defaultCountry: flags["default-country"] || "",
     fallback: flags.fallback || "none",
     ambiguity: flags.ambiguity || (flags.dominant ? "dominant" : "none"),
+    ambiguousFallback: flags["ambiguous-fallback"] || "none",
 };
 
 /**

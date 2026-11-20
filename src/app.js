@@ -367,6 +367,7 @@ async function run() {
         defaultCountry: el("default-country").value,
         fallback: el("fallback").value,
         ambiguity: el("dominant").value,
+        ambiguousFallback: el("ambiguous").value,
     };
 
     /**

@@ -80,6 +80,23 @@
      people. Where the real town is the one without a census record, this picks wrong. Rows
      decided by either rule say which one in the Status column.</p>
   <label class="field">
+    <span class="field-name">When the shared places all sit in one area</span>
+    <select id="ambiguous">
+      <option value="none">Leave the row blank</option>
+      <option value="area">Use the centre of the smallest area they share</option>
+    </select>
+    <span class="field-hint">Blank by default, and applied only to rows still ambiguous after
+       the setting above.</span>
+  </label>
+  <p class="field-hint">This is the one ambiguity with an answer that is not a guess. Five
+     places called <code>Greenwood</code> in Indiana are five different places and nothing in
+     the row says which &mdash; but all five <em>are</em> in Indiana, so the centre of Indiana
+     is wrong only by the size of Indiana, where picking the largest can be wrong by the width
+     of the country. Where they also share a county the county centre is used instead, which is
+     tighter by an order of magnitude. <code>Springfield, USA</code> is untouched: Missouri,
+     Massachusetts and Illinois share nothing smaller than the country, so it stays ambiguous.
+     These rows are marked <em>Approximate</em> and say which area they were put at.</p>
+  <label class="field">
     <span class="field-name">What the result file should contain</span>
     <select id="output-format">
       <option value="rows">Every input row, with coordinates added</option>
