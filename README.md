@@ -228,7 +228,7 @@ Springfields, and the leader changes with the census. Rows decided this way say 
 
 ## Coverage
 
-6,114,354 places across 248 countries, 4,478 subdivisions, 47,643 counties.
+6,117,831 places across 248 countries, 4,477 subdivisions, 47,749 counties.
 
 Every populated place GeoNames records, with **no population threshold at all**, plus four
 slices chosen for what people actually geocode:
@@ -277,8 +277,10 @@ node test/run-tests.mjs
 ```
 
 The data step needs `allCountries.txt`, `admin1CodesASCII.txt`, `admin2Codes.txt` and
-`countryInfo.txt` from [download.geonames.org](https://download.geonames.org/export/dump/).
-It writes `dist/data/` — 288 MB across 248 shards, of which the US is 25.8 MB and most
+`countryInfo.txt` from [download.geonames.org](https://download.geonames.org/export/dump/), plus
+`alternateNamesV2.txt` — without that last one the build still works, but places are
+reachable only by their primary name, so `Roma` and `München` will not resolve.
+It writes `dist/data/` — 305 MB across 248 shards, of which the US is 27.1 MB and most
 countries are under 1 MB. You only need this to refresh the data; to *use* the tool, take the
 release asset instead.
 

@@ -230,9 +230,17 @@ console.log("\nFormer and minor places are matched, but flagged");
 // Carried so a historical address still resolves, ranked last so they never win a tie, and
 // marked so a live dataset can show whether carrying them was worth it.
 checkFlag("Blakeley, AL - historical", "Blakeley|AL|USA", "abandoned, destroyed or historical");
-// Attu deliberately expects NO flag: Alaska holds both the abandoned village and the still
-// occupied Attu Station, and the tier rule is supposed to prefer the one that exists.
-checkFlag("Attu, AK - the living one wins", "Attu|AK|USA", "");
+/**
+ * Attu is the abandoned village, and asking for it should return it - flagged.
+ *
+ * This expected the opposite until language-filtered alternate names arrived. Attu Station,
+ * a separate place of 21 people, had been carrying "Attu" as an unfiltered alternate, so the
+ * tier rule preferred the inhabited one and the test called that a success. It was the data
+ * that was wrong, not the rule: the two are different places and each now answers to its own
+ * name.
+ */
+checkFlag("Attu, AK is the abandoned village", "Attu|AK|USA", "abandoned, destroyed or historical");
+check("Attu Station is its own place", "Attu Station|AK|USA", [52.83, 173.18, 0.6]);
 checkFlag("Mustang Field, TX - abandoned airfield", "Mustang Field|TX|USA", "abandoned, destroyed or historical");
 checkFlag("Bay View Estates, AL - section", "Bay View Estates|AL|USA", "section or locality");
 checkFlag("Andover, MA - an ordinary town", "Andover|MA|USA", "");

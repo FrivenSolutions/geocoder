@@ -31,7 +31,7 @@
  * narrows by subdivision and by tier, and reports an ambiguity it cannot narrow.
  */
 
-import { createReadStream, readFileSync, writeFileSync, mkdirSync, rmSync, appendFileSync, readdirSync, statSync } from "node:fs";
+import { createReadStream, readFileSync, writeFileSync, mkdirSync, rmSync, appendFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -123,6 +123,18 @@ const NOT_A_SETTLEMENT = new Set([...MINOR, "BLDG", ...BARE_ADMIN]);
 const lines = (name) => readFileSync(join(src, name), "utf8").split("\n").filter((l) => l && !l.startsWith("#"));
 
 /**
+ * Values of the alternateNames language column that are not languages.
+ *
+ * The file reuses that column for Wikipedia links, Wikidata ids, postcodes and phone
+ * prefixes. "link" and "wkdt" alone are a quarter of a million rows in the first three
+ * million, and none of them is a name anybody types.
+ */
+const NOT_A_LANGUAGE = new Set(["link", "wkdt", "post", "unlc", "phone", "tcid", "fr_1793"]);
+
+/** Codes that are identifiers rather than translations, worth keeping only for facilities. */
+const CODE_LANGUAGE = new Set(["abbr", "iata", "icao", "faac"]);
+
+/**
  * Chooses which alternate names are worth indexing.
  *
  * The alternatenames column is long and unranked - Tel Aviv carries 90 - so taking the first
@@ -140,6 +152,11 @@ const lines = (name) => readFileSync(join(src, name), "utf8").split("\n").filter
  * only 162,000 of them. A base is written half a dozen ways and the short code - KBED, TLV,
  * RMS - is one of them.
  */
+/** A base, airport or port rather than a town or a civil division. */
+function facilityCode(fcode) {
+    return fcode.slice(0, 3) !== "PPL" && !BARE_ADMIN.has(fcode);
+}
+
 function pickAlternates(name, ascii, alt, fcode) {
     if (!alt) {
         return [];
@@ -147,7 +164,7 @@ function pickAlternates(name, ascii, alt, fcode) {
     // Only real facilities get the loose treatment. A base or airport is written half a dozen
     // ways and its short code - KBED, TLV - is one of them; a county has no such identifier,
     // so the looser rule would only let noise in.
-    const facility = fcode.slice(0, 3) !== "PPL" && !BARE_ADMIN.has(fcode);
+    const facility = facilityCode(fcode);
     const primary = new Set(tokens(name).concat(tokens(ascii)));
     const usable = alt.split(",").filter((one) => one.length <= 60 && isLatin(one) && tokens(one).length);
     const out = [];
@@ -219,6 +236,29 @@ for (const r of lines("countryInfo.txt").map((l) => l.split("\t"))) {
         nameTo2.set(fold(name), a2.toUpperCase());
         displayName.set(a2.toUpperCase(), name);
     }
+}
+
+/**
+ * The languages each country's own names are written in, from countryInfo's Languages
+ * column, reduced to primary subtags: "en-US,es-US,haw,fr" becomes en, es, haw, fr.
+ *
+ * This is what decides whether an alternate name is worth keeping. A place in Italy should
+ * carry its Italian name and its English one; its Armenian and Bengali names are weight.
+ */
+const countryLanguages = new Map();
+for (const r of lines("countryInfo.txt").map((l) => l.split("\t"))) {
+    const a2 = r[0];
+    if (!a2 || a2.length !== 2) {
+        continue;
+    }
+    const langs = new Set(["en"]);
+    for (const tag of (r[15] || "").split(",")) {
+        const primary = tag.trim().split("-")[0].toLowerCase();
+        if (primary) {
+            langs.add(primary);
+        }
+    }
+    countryLanguages.set(a2.toUpperCase(), langs);
 }
 
 // GeoNames' own country names are not always what a user types: NL is "The Netherlands".
@@ -339,6 +379,8 @@ const flush = (cc) => {
 
 let read = 0;
 let kept = 0;
+const keptIds = [];
+const keptCc = [];
 process.stdout.write("pass 1  splitting by country ");
 const rl = createInterface({ input: createReadStream(join(src, "allCountries.txt")), crlfDelay: Infinity });
 for await (const line of rl) {
@@ -372,13 +414,17 @@ for await (const line of rl) {
         continue;
     }
     kept++;
+    // Remembered so the alternate-names pass can tell, for 19 million rows, which of them
+    // belong to a place this gazetteer carries and which country that place is in.
+    keptIds.push(Number(c[0]));
+    keptCc.push(cc);
     let buf = buffers.get(cc);
     if (!buf) {
         buf = [];
         buffers.set(cc, buf);
     }
-    // name, asciiname, alternates, lat, lon, fcode, admin1, admin2, population
-    buf.push([c[1], c[2], c[3], c[4], c[5], c[7], c[10] || "", c[11] || "", c[14] || "0"].join("\t"));
+    // geonameid, name, asciiname, alternates, lat, lon, fcode, admin1, admin2, population
+    buf.push([c[0], c[1], c[2], c[3], c[4], c[5], c[7], c[10] || "", c[11] || "", c[14] || "0"].join("\t"));
     if (buf.length >= FLUSH) {
         flush(cc);
     }
@@ -389,7 +435,126 @@ for (const cc of buffers.keys()) {
 console.log("\n        " + read.toLocaleString() + " rows read, " + kept.toLocaleString() + " kept, " + buffers.size + " countries");
 
 // ---------------------------------------------------------------------------
-// Pass 2 - one shard per country.
+// Pass 2 - the names each place is actually known by.
+//
+// The alternatenames column embedded in allCountries is unusable for choosing: it is sorted
+// alphabetically and carries no language, so Rome lists "An Roimh" first and "Roma"
+// fifteenth, and any "keep the first few" rule picks languages at random. Taking the subset
+// that shares words with the primary name instead discards every endonym, which is worse -
+// with Rome unindexed as "Roma", a hamlet wins the lookup and answers confidently.
+//
+// alternateNamesV2 is the same data with an ISO language code, a preferred-name flag and a
+// historic flag per row. That turns the choice from a guess into a filter: keep each place's
+// name in its own country's languages and in English, drop the other ninety.
+//
+// 19.25 million rows against 6.1 million places, so neither side can be held in memory. The
+// ids kept by pass 1 go into sorted typed arrays - 30 MB for both, against roughly half a
+// gigabyte for the equivalent Map - and the alternates are written back out per country.
+// ---------------------------------------------------------------------------
+const altSource = join(src, "alternateNamesV2.txt");
+const haveAlternates = existsSync(altSource);
+
+if (haveAlternates) {
+    const order = keptIds.map((_, i) => i).sort((a, b) => keptIds[a] - keptIds[b]);
+    const sortedIds = new Int32Array(order.length);
+    const sortedCc = new Array(order.length);
+    for (let i = 0; i < order.length; i++) {
+        sortedIds[i] = keptIds[order[i]];
+        sortedCc[i] = keptCc[order[i]];
+    }
+    keptIds.length = 0;
+    keptCc.length = 0;
+
+    const countryOf = (id) => {
+        let lo = 0;
+        let hi = sortedIds.length - 1;
+        while (lo <= hi) {
+            const mid = (lo + hi) >> 1;
+            if (sortedIds[mid] === id) {
+                return sortedCc[mid];
+            }
+            if (sortedIds[mid] < id) {
+                lo = mid + 1;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        return null;
+    };
+
+    const altBuffers = new Map();
+    const flushAlt = (cc) => {
+        const buf = altBuffers.get(cc);
+        if (buf && buf.length) {
+            appendFileSync(join(work, cc + ".alt"), buf.join("\n") + "\n");
+            buf.length = 0;
+        }
+    };
+
+    let altRead = 0;
+    let altKept = 0;
+    process.stdout.write("pass 2  reading alternate names ");
+    const altLines = createInterface({ input: createReadStream(altSource, "utf8"), crlfDelay: Infinity });
+    for await (const line of altLines) {
+        altRead++;
+        if (altRead % 2000000 === 0) {
+            process.stdout.write(".");
+        }
+        const a = line.split("\t");
+        const name = a[3];
+        if (!name || name.length > 60 || a[7] === "1") {
+            // No name, implausibly long, or flagged historic.
+            continue;
+        }
+        const lang = (a[2] || "").toLowerCase();
+        if (NOT_A_LANGUAGE.has(lang) || !isLatin(name)) {
+            continue;
+        }
+        const id = Number(a[1]);
+        const cc = countryOf(id);
+        if (!cc) {
+            continue;
+        }
+        const langs = countryLanguages.get(cc);
+        const isCode = CODE_LANGUAGE.has(lang);
+        // An empty language is GeoNames' "no language stated", which is overwhelmingly the
+        // local form of the name, so it is kept for the country it belongs to.
+        if (!isCode && lang !== "" && !(langs && langs.has(lang))) {
+            continue;
+        }
+        /**
+         * Rank, so the per-place cap keeps the names worth having. Preferred and short names
+         * first, then the country's own languages, then English, then the unstated ones.
+         */
+        let rank = 4;
+        if (a[4] === "1") {
+            rank = 0;
+        } else if (a[5] === "1") {
+            rank = 1;
+        } else if (lang && lang !== "en" && !isCode) {
+            rank = 2;
+        } else if (lang === "en") {
+            rank = 3;
+        }
+        altKept++;
+        let buf = altBuffers.get(cc);
+        if (!buf) {
+            buf = [];
+            altBuffers.set(cc, buf);
+        }
+        buf.push(a[1] + "\t" + rank + "\t" + name.replace(/[\r\n\t]+/g, " "));
+        if (buf.length >= FLUSH) {
+            flushAlt(cc);
+        }
+    }
+    for (const cc of altBuffers.keys()) {
+        flushAlt(cc);
+    }
+    console.log("\n        " + altRead.toLocaleString() + " read, " + altKept.toLocaleString() + " kept");
+}
+
+// ---------------------------------------------------------------------------
+// Pass 3 - one shard per country.
 // ---------------------------------------------------------------------------
 const a1Codes = [];
 const a1Index = new Map();
@@ -413,10 +578,38 @@ const a2Sum = [];
 
 const shards = {};
 const files = readdirSync(work).filter((f) => f.endsWith(".tsv")).sort();
-console.log("pass 2  building shards");
+console.log("pass 3  building shards");
 for (const file of files) {
     const cc = file.slice(0, -4);
     const rows = readFileSync(join(work, file), "utf8").split("\n").filter(Boolean).map((l) => l.split("\t"));
+
+    /**
+     * This country's chosen alternate names, best first. Read per country so that only one
+     * country's worth is ever in memory at once.
+     */
+    const altFor = new Map();
+    const altPath = join(work, cc + ".alt");
+    if (existsSync(altPath)) {
+        const pending = [];
+        for (const line of readFileSync(altPath, "utf8").split("\n")) {
+            if (!line) {
+                continue;
+            }
+            const t = line.split("\t");
+            pending.push([t[0], Number(t[1]), t[2]]);
+        }
+        pending.sort((a, b) => a[1] - b[1]);
+        for (const entry of pending) {
+            let list = altFor.get(entry[0]);
+            if (!list) {
+                list = [];
+                altFor.set(entry[0], list);
+            }
+            if (list.length < 6) {
+                list.push(entry[2]);
+            }
+        }
+    }
     // Longitude order keeps the deltas small; the secondary sort makes the build reproducible.
     rows.sort((a, b) => Number(a[4]) - Number(b[4]) || Number(a[3]) - Number(b[3]) || (a[0] < b[0] ? -1 : 1));
 
@@ -430,16 +623,18 @@ for (const file of files) {
     const keyPairs = [];
 
     rows.forEach((r, i) => {
-        const name = r[0];
-        const ascii = r[1];
-        const alt = r[2];
-        const fcode = r[5] || "PPL";
-        const admin1 = r[6];
-        const admin2 = r[7];
+        // Pass 1 now writes the geonameid first, so every other field shifted by one.
+        const geonameid = r[0];
+        const name = r[1];
+        const ascii = r[2];
+        const embeddedAlt = r[3];
+        const fcode = r[6] || "PPL";
+        const admin1 = r[7];
+        const admin2 = r[8];
         const a1Key = admin1 ? cc + "." + admin1 : "";
         const a2Key = admin1 && admin2 ? cc + "." + admin1 + "." + admin2 : "";
-        const lonInt = Math.round(Number(r[4]) * SCALE);
-        const latInt = Math.round(Number(r[3]) * SCALE);
+        const lonInt = Math.round(Number(r[5]) * SCALE);
+        const latInt = Math.round(Number(r[4]) * SCALE);
         lon.push(lonInt);
         lat.push(latInt);
         const at1 = a1Key ? intern(a1Codes, a1Index, a1Key) : -1;
@@ -447,7 +642,7 @@ for (const file of files) {
         const at2 = a2Key && a2Name.has(a2Key) ? intern(a2Codes, a2Index, a2Key) : -1;
         a2Ref.push(at2);
         fcRef.push(intern(fcCodes, fcIndex, fcode));
-        pop.push(Number(r[8]) || 0);
+        pop.push(Number(r[9]) || 0);
         names.push(name.replace(/[\r\n\t]+/g, " "));
 
         if (!NOT_A_SETTLEMENT.has(fcode)) {
@@ -501,8 +696,24 @@ for (const file of files) {
         if (bare.test(ascii)) {
             add(ascii.replace(bare, ""));
         }
-        for (const one of pickAlternates(name, ascii, alt, fcode)) {
-            add(one);
+        // The language-filtered names where we have them, the embedded column only as a
+        // fallback for a build run without alternateNamesV2.
+        const chosen = altFor.get(geonameid);
+        if (chosen) {
+            for (const one of chosen) {
+                add(one);
+            }
+            if (facilityCode(fcode)) {
+                // Facilities also keep the short identifiers - KBED, TLV - which live in the
+                // embedded column under no language at all.
+                for (const one of pickAlternates(name, ascii, embeddedAlt, fcode)) {
+                    add(one);
+                }
+            }
+        } else {
+            for (const one of pickAlternates(name, ascii, embeddedAlt, fcode)) {
+                add(one);
+            }
         }
     });
 
